@@ -64,10 +64,14 @@ defmodule AshDiscreteBusinessEvents.LedgerRowContractTest do
   # ── Fixture: the design's example event ────────────────────────────────
   # A Salesforce opportunity moved from Qualification to Proposal at
   # 14:03; the Bulk 2.0 sync observed it nine minutes later. Same
-  # shape as the row BIZEV-4 writes.
+  # shape as the row BIZEV-4 writes. (BIZEV-4 amendment, cited: §5.1
+  # stores event_kind in AshEvents' `action`, an ATOM column — the
+  # projector DSL's `project "opportunity.stage_changed"` converts the
+  # string form to the atom at compile time. The written form in the
+  # design's table is the string; the stored form is the atom.)
 
   @example_event %{
-    event_kind: "opportunity.stage_changed",
+    event_kind: :"opportunity.stage_changed",
     data: %{
       from_stage: "Qualification",
       to_stage: "Proposal",
@@ -157,11 +161,13 @@ defmodule AshDiscreteBusinessEvents.LedgerRowContractTest do
     end
 
     test "event_kind rides the row for projector dispatch" do
-      # §5.1: event_kind rides AshEvents' `action`, so projectors written in
-      # the existing DSL drain business events unchanged. BIZEV-4 must map
-      # the row's event_kind onto AshEvents' action field verbatim.
-      assert is_binary(@example_event.event_kind)
-      assert @example_event.event_kind =~ "."
+      # §5.1: event_kind rides AshEvents' `action` (an atom column), so
+      # projectors written in the existing DSL drain business events
+      # unchanged — `project "opportunity.stage_changed"` matches the
+      # atom form. BIZEV-4 maps the row's event_kind onto AshEvents'
+      # action field verbatim.
+      assert is_atom(@example_event.event_kind)
+      assert @example_event.event_kind |> Atom.to_string() =~ "."
     end
 
     test "subject and actor are descriptors, not identities" do

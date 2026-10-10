@@ -88,8 +88,8 @@ end
 | Slice | Delivers |
 |---|---|
 | **BIZEV-2** | Contracts frozen — DSL sections, ledger row shape and SourceRecord identity pinned by fixture tests; review checklist (`docs/REVIEW.md`) |
-| **BIZEV-3** (this branch) | **SourceRecord: the temporal raw-landing layer** |
-| BIZEV-4 | The Ledger: dedicated AshEvents log, commit order, hash chains |
+| **BIZEV-3** | SourceRecord: the temporal raw-landing layer |
+| **BIZEV-4** (this branch) | **The Ledger: the dedicated AshEvents log — locked, chained, append-only** |
 | BIZEV-5 | Mapping engine: rules as versioned, content-hashed data |
 | BIZEV-6 | Lineage integration (batch granularity, leak-rule test) |
 | BIZEV-7 | Salesforce Bulk API 2.0 vertical + fixture corpus |
@@ -100,6 +100,89 @@ end
 Until BIZEV-7's fixture corpus lands, demos run on *internal* event history
 and are labeled as such — no demo ever shows external events that did not
 traverse the ledger.
+
+## The ledger (BIZEV-4)
+
+A dedicated `AshEvents.EventLog` whose rows *are* canonical discrete
+business events (design §1.4, §5.1) — plus its **simulation twin** from the
+same declaration (§5.6, SIM-NAMESPACE-ISOLATION: two modules, two tables;
+sim rows carry `simulated: true` and a `simulation_run` label, and can
+never reach a real projector's rebuild because the real rebuild reads the
+real module's table):
+
+```elixir
+defmodule MyApp.Platform.Ledger do
+  use Ash.Resource,
+    domain: MyApp.BusinessEvents,
+    data_layer: AshPostgres.DataLayer,
+    authorizers: [Ash.Policy.Authorizer],
+    extensions: [AshEvents.EventLog, AshDiscreteBusinessEvents.Ledger.Extension]
+
+  use AshDiscreteBusinessEvents.Resources, {:ledger,
+    repo: MyApp.Repo,
+    table: "ledger_events",
+    simulation_table: "ledger_simulation_events",
+    domain: MyApp.BusinessEvents}
+
+  policies do
+    # your grants govern record / the region-scoped reads / the alarmed
+    # cross_region_read natively
+  end
+end
+```
+
+The row is the §1.4 table, concrete: `action` rides the event kind
+(projector-dispatchable as-is) with `data` the canonical payload; the
+subject and actor ride as **descriptors, never foreign keys**;
+`occurred_at` (source truth) / `observed_at` (when we learned) /
+`sequence` (commit order) are three clocks answering three questions;
+`context` + `provenance` (mapping name, version hash, source record);
+`supersedes_event_id` — corrections are new rows, never rewrites;
+`delivery_key` — webhook idempotency below source idempotency; `region` +
+`residency_tag`.
+
+The machinery, owned here:
+
+- **Commit order**: the `record` path takes a per-region advisory
+  xact lock **before** insert (`RegionLockKeyGenerator`), so the
+  bigserial `sequence` is assigned only after the previous same-region
+  writer committed — *within one region, sequence order is commit order*.
+  A plain bigserial without the lock is the canonical wrong thing to
+  build a feed on; the three caveats are documented on the generator and
+  pinned by a permanent concurrent-writers test.
+- **Tamper evidence**: per-region SHA-256 hash chains, written by a
+  `BEFORE INSERT` trigger and verified in SQL with the same expression:
+
+  ```sh
+  mix bizev.verify_chains --resource MyApp.Ledger [--region us] [--json]
+  ```
+
+- **Append-only**: update/destroy actions do not exist, AshEvents' stock
+  create is removed, and the emitted immutability trigger refuses UPDATE
+  and DELETE at the database. Correct a wrong entry by recording a new
+  one.
+- **Region discipline (§6)**: consumer reads (`by_region`, `feed`,
+  `by_subject`, `by_id`) all require a region; `feed` is the
+  high-watermark commit-order feed. The one gated exception,
+  `cross_region_read`, needs two or more explicit regions and records a
+  `:"region.disclosure"` row **in each queried region's chain** — a
+  cross-region total is shown with its jurisdictions, never without.
+
+```elixir
+MyApp.Platform.Ledger.record!(%{
+  event_kind: :"opportunity.stage_changed",
+  region: :us,
+  residency_tag: "us",
+  subject_type: "crm.opportunity",
+  subject_external_id: "0065f000003Xy7ZAAS",
+  occurred_at: occurred_at,
+  provenance: %{mapping_name: "...", mapping_version_hash: "...", source_record_id: "..."},
+  data: payload
+})
+
+# The commit-order feed for a consumer's cursor:
+MyApp.Platform.Ledger.feed!(:us, %{after_sequence: last_seen_sequence})
+```
 
 ## The raw layer (BIZEV-3)
 
