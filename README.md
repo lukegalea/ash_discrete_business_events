@@ -87,8 +87,8 @@ end
 
 | Slice | Delivers |
 |---|---|
-| **BIZEV-2** (this repo) | Design slice: contracts frozen — DSL sections, ledger row shape and SourceRecord identity pinned by fixture tests; review checklist (`docs/REVIEW.md`) |
-| BIZEV-3 | SourceRecord: the temporal raw-landing layer |
+| **BIZEV-2** | Contracts frozen — DSL sections, ledger row shape and SourceRecord identity pinned by fixture tests; review checklist (`docs/REVIEW.md`) |
+| **BIZEV-3** (this branch) | **SourceRecord: the temporal raw-landing layer** |
 | BIZEV-4 | The Ledger: dedicated AshEvents log, commit order, hash chains |
 | BIZEV-5 | Mapping engine: rules as versioned, content-hashed data |
 | BIZEV-6 | Lineage integration (batch granularity, leak-rule test) |
@@ -100,6 +100,72 @@ end
 Until BIZEV-7's fixture corpus lands, demos run on *internal* event history
 and are labeled as such — no demo ever shows external events that did not
 traverse the ledger.
+
+## The raw layer (BIZEV-3)
+
+Instantiate the SourceRecord on your own base — the resource macro, not a
+concrete module, so your policies govern the land and read actions natively:
+
+```elixir
+defmodule MyApp.Ingestion.SourceRecord do
+  use Ash.Resource,
+    domain: MyApp.BusinessEvents,
+    data_layer: AshPostgres.DataLayer
+
+  use AshDiscreteBusinessEvents.Resources, :source_record
+
+  postgres do
+    table "source_records"
+    repo MyApp.Repo
+  end
+end
+```
+
+The macro emits the temporal raw layer (design §1.3):
+
+- **One record per `(source, stream, external_id, region)` identity**, with
+  version history as periods: `valid_at = [fetched_at, next observation)`.
+  The identity is period-aware `WITHOUT OVERLAPS` (a GiST exclusion
+  constraint) — **stream and region live in the identity**, structurally
+  fixing the two-streams-one-id collision. There are NO hand-rolled
+  `valid_from`/`valid_until` columns; the temporal extension owns validity.
+- **`land` is idempotent at the source layer**: identical content (same
+  payload and cursor) is a temporal no-op; changed content splits the
+  period at the observation instant — history is never overwritten. The
+  decision is made against the version valid *at `fetched_at`*, so a
+  late-arriving duplicate of already-observed content is a no-op, not a
+  new period.
+- **Zone/residency admission at land**: the land action refuses until the
+  observation is tagged, and refuses a tag that does not admit into the
+  target region (ADR 0042: admission is checked where data is first
+  written, never at egress).
+- **Cursor-as-data**: `cursor` and `fetched_at` ride the observation;
+  `advance_cursor` and `reset_cursor` are explicit actions whose changes
+  are splits — cursor history is observation history, never a rewrite.
+  Re-sync after reset can neither duplicate (identical content is a no-op)
+  nor silently revise (changed content opens a visible new period).
+- **As-of reads**: `SourceRecord.at(source, stream, external_id, region,
+  as_of)` answers *what did the source say at T* as an index-backed
+  containment read, not a replay.
+
+```elixir
+{:ok, landed} =
+  MyApp.Ingestion.SourceRecord.land(%{
+    source: :salesforce,
+    stream: :opportunity,
+    external_id: "0065f000003Xy7ZAAS",
+    region: :us,
+    residency_tag: "us",
+    raw_payload: payload,
+    cursor: %{"system_modstamp" => "2026-10-01T14:09:30.000+0000"},
+    fetched_at: fetched_at
+  })
+
+# What did the source say on Oct 1?
+MyApp.Ingestion.SourceRecord.at(:salesforce, :opportunity, "0065f000003Xy7ZAAS",
+  :us, ~U[2026-10-01 16:00:00.000000Z]
+)
+```
 
 ## Review discipline
 

@@ -71,7 +71,13 @@ defmodule AshDiscreteBusinessEvents.MixProject do
       # Dev hygiene: static analysis (credo with the ash_credo plugin).
       # Compile before credo — ash_credo's module checks need the BEAMs.
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-      {:ash_credo, "~> 0.18", only: [:dev, :test], runtime: false}
+      {:ash_credo, "~> 0.18", only: [:dev, :test], runtime: false},
+
+      # The fixture SourceRecord proves the ADR 0035 posture (host policy
+      # blocks govern macro-generated actions), and compiling policies
+      # needs a SAT solver. Hosts with policies bring their own; the
+      # suite uses the pure-Elixir one, test-only, no NIF.
+      {:simple_sat, "~> 0.1", only: :test, runtime: false}
     ]
   end
 

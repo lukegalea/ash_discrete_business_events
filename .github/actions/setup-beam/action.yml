@@ -1,0 +1,66 @@
+# SPDX-FileCopyrightText: 2026 ash_discrete_business_events contributors <https://github.com/lukegalea/ash_discrete_business_events>
+#
+# SPDX-License-Identifier: MIT
+
+name: Set up the BEAM
+description: >
+  The one place CI pins Erlang/OTP and Elixir, restores the dependency and
+  build cache for the requested MIX_ENV, and fetches dependencies. Every job
+  uses this action, so the toolchain cannot drift between jobs, and the
+  version appears in cache keys by reference rather than as a copied
+  literal. Every dependency of this package is public (hex, plus the
+  lukegalea forks), so fetches are anonymous — no token input.
+
+inputs:
+  mix-env:
+    description: The MIX_ENV to fetch and build for.
+    required: false
+    default: test
+
+outputs:
+  elixir-version:
+    description: The pinned Elixir version, for cache keys.
+    value: ${{ steps.pin.outputs.elixir-version }}
+
+runs:
+  using: composite
+  steps:
+    # Pinned to the pairing the local compile lane uses (ash_enterprise's
+    # devenv, which carries Elixir 1.20.3 — CI pins 1.20.4, the same
+    # accepted patch skew the family's CIs document). CI drifting from
+    # local is how "works on my machine" becomes a class of bug rather
+    # than an incident.
+    - id: pin
+      shell: bash
+      run: |
+        echo "otp-version=27.3.4" >> "$GITHUB_OUTPUT"
+        echo "elixir-version=1.20.4" >> "$GITHUB_OUTPUT"
+
+    - uses: erlef/setup-beam@v1
+      with:
+        otp-version: ${{ steps.pin.outputs.otp-version }}
+        elixir-version: ${{ steps.pin.outputs.elixir-version }}
+
+    # Keyed per Elixir version. _build is not portable across compilers, so
+    # the version rides the key: a cache written by an older compiler must
+    # never be restored here.
+    - uses: actions/cache@v4
+      with:
+        path: |
+          deps
+          _build
+        key: ${{ runner.os }}-mix-${{ inputs.mix-env }}-${{ steps.pin.outputs.elixir-version }}-${{ hashFiles('mix.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-mix-${{ inputs.mix-env }}-${{ steps.pin.outputs.elixir-version }}-
+
+    - name: Install hex and rebar
+      shell: bash
+      run: |
+        mix local.hex --force
+        mix local.rebar --force
+
+    - name: Fetch dependencies
+      shell: bash
+      env:
+        MIX_ENV: ${{ inputs.mix-env }}
+      run: mix deps.get
