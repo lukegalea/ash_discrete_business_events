@@ -1,0 +1,115 @@
+# SPDX-FileCopyrightText: 2026 ash_discrete_business_events contributors <https://github.com/lukegalea/ash_discrete_business_events>
+#
+# SPDX-License-Identifier: MIT
+
+defmodule AshDiscreteBusinessEvents.Ledger.Record do
+  @moduledoc """
+  The `:record` action's run module — the ledger's only write path.
+
+  Delivery idempotency: a `delivery_key` already recorded IN THE SAME
+  REGION collapses to the existing row. The fast path is an unlocked
+  read (webhook retries are common and read-only); the racy path is
+  covered by the `(delivery_key, region)` identity — the region lock
+  serializes same-region writers, and if two writers for one delivery
+  key race past the fast path, the unique index rejects the loser and
+  this module re-reads and returns the winner. Either way: one row per
+  delivery, per region.
+  """
+
+  use Ash.Resource.Actions.Implementation
+
+  require Ash.Query
+
+  @impl true
+  def run(input, _opts, _context) do
+    resource = input.resource
+    args = input.arguments
+
+    case delivered_already(resource, args) do
+      {:ok, existing} when not is_nil(existing) ->
+        # Already delivered: collapse to the existing row. Nothing is
+        # written, no sequence is consumed, no chain link is spent.
+        {:ok, existing}
+
+      _ ->
+        append(resource, args)
+    end
+  end
+
+  defp append(resource, args) do
+    append_attrs = %{
+      region: args.region,
+      residency_tag: args.residency_tag,
+      subject_type: args.subject_type,
+      subject_external_id: args.subject_external_id,
+      subject_stream: args.subject_stream,
+      actor_type: args.actor_type,
+      actor_external_id: args.actor_external_id,
+      actor_display: args.actor_display,
+      occurred_at: args.occurred_at,
+      observed_at: args.observed_at,
+      context: args.context,
+      provenance: args.provenance,
+      supersedes_event_id: args.supersedes_event_id,
+      delivery_key: args.delivery_key,
+      data: args.data
+    }
+
+    sim_extra =
+      if Map.has_key?(args, :simulation_run),
+        do: %{simulation_run: args.simulation_run},
+        else: %{}
+
+    append_attrs =
+      append_attrs
+      |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+      |> Map.new()
+      |> Map.merge(%{
+        event_kind: args.event_kind,
+        subject_resource: Map.get(args, :subject_resource)
+      })
+
+    changeset =
+      resource
+      |> Ash.Changeset.for_create(:append, Map.merge(append_attrs, sim_extra))
+
+    case Ash.create(changeset) do
+      {:ok, record} ->
+        {:ok, record}
+
+      {:error, error} ->
+        retry_on_delivery_race(error, resource, args)
+    end
+  end
+
+  # Lost the race against a concurrent writer for the same delivery key
+  # (same region): the unique index rejected our append — return the
+  # winner instead of an error. Any other error passes through.
+  defp retry_on_delivery_race(error, resource, args) do
+    delivered? =
+      args.delivery_key != nil and
+        Exception.message(error) =~ "has already been delivered"
+
+    if delivered? do
+      case delivered_already(resource, args) do
+        {:ok, existing} when not is_nil(existing) -> {:ok, existing}
+        _ -> {:error, error}
+      end
+    else
+      {:error, error}
+    end
+  end
+
+  defp delivered_already(resource, args) do
+    case args.delivery_key do
+      delivery_key when is_binary(delivery_key) ->
+        resource
+        |> Ash.Query.for_read(:by_region, %{region: args.region})
+        |> Ash.Query.filter(delivery_key == ^delivery_key)
+        |> Ash.read_one()
+
+      _ ->
+        {:ok, nil}
+    end
+  end
+end

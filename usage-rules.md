@@ -11,10 +11,11 @@ consumers. (Grows with each slice; what is here is already binding.)
 ## What the package is
 
 The canonical discrete business-event ledger: `SourceRecord` raw landing
-with temporal version history (BIZEV-3), a dedicated chained event ledger
-with per-region commit-order sequences (BIZEV-4), and mappings-as-data
-with per-row provenance (BIZEV-5) — the land → map → ledger boundary
-external SaaS history enters the platform through.
+with temporal version history (BIZEV-3), the dedicated locked-and-chained
+event ledger with per-region commit-order sequences and its simulation
+twin (BIZEV-4), and mappings-as-data with per-row provenance (BIZEV-5) —
+the land → map → ledger boundary external SaaS history enters the
+platform through.
 
 ## What it never does — do not make it
 
@@ -27,8 +28,15 @@ external SaaS history enters the platform through.
   `docs/REVIEW.md` rejects this on sight.
 - **Never merge regions silently.** Chains, advisory locks, sequences and
   cursors are per-region, structurally (§6). A global chain or global
-  cursor is a silent merge — the partition is the honesty. Cross-region
-  reads are one gated, disclosed operator action, never the default.
+  cursor is a silent merge — the partition is the honesty. Consumer reads
+  require a region; the one gated exception (`cross_region_read`) writes
+  a disclosure row per queried region before scanning. Delivery
+  idempotency is per region too — same delivery_key, different region,
+  two rows.
+- **Never write the ledger except through `record`.** Update/destroy
+  actions do not exist and the immutability trigger refuses them at the
+  database; the stock AshEvents create is removed. Correct a wrong entry
+  by recording a new one with `supersedes_event_id`.
 - **Never put cursors in job args.** Cursors are data: on SourceRecord
   rows and sync-run records (§2.3). `reset_cursor` is an explicit
   action; wrong-cursor conditions are operator actions, never silent
@@ -41,8 +49,8 @@ external SaaS history enters the platform through.
   an idempotency key inside the identity tuple, not a join key.
 - **Never ship a concrete resource module for hosts to adopt.** The
   resources are resource macros (`use AshDiscreteBusinessEvents.Resources,
-  :source_record` / `:ledger`) so hosts instantiate them on their own base
-  and their policies apply natively (§1.1).
+  :source_record` / `{:ledger, opts}`) so hosts instantiate them on their
+  own base and their policies apply natively (§1.1).
 - **Never emit per-row lineage.** Lineage is at job granularity — the sync
   run or webhook batch is the unit (§3). The run-id derivation is
   exported and shared by construction, and the leak rule (no actor,
@@ -51,6 +59,10 @@ external SaaS history enters the platform through.
 - **Never silently degrade on budget exhaustion.** Rate budgets are
   surfaced data; exhaustion is a visible FAIL — the feed pauses, it does
   not degrade (§7).
+- **Never let simulated events touch real consumption.** The twin is a
+  separate module and table (§5.6); sim rows are unmistakable by shape
+  (`simulated: true` + `simulation_run`). Projectors, rebuilders, cursors
+  and chains bind to the module — no query-filter discipline to forget.
 
 ## Working with the raw layer (BIZEV-3)
 
@@ -76,6 +88,23 @@ external SaaS history enters the platform through.
 - Identity attributes must be globally unique across concurrent tests —
   two tests landing the same external id deadlock on the exclusion
   constraint's row locks (the ash:testing deadlock rule).
+
+## Working with the ledger (BIZEV-4)
+
+- Record through `record/1` only. `sequence` order is commit order per
+  region because the record path takes the advisory lock before insert —
+  never add a write path that skips the lock, and never consume the feed
+  on anything but `sequence` (`feed/2` resumes after a high-water mark).
+- `action_type` is the substrate's replay routing, derived from the
+  consumer's action of the kind's name (create/update) — not caller
+  input. `action` carries the event kind; projectors match
+  `project "kind"` (the atom form).
+- The immutability trigger is part of the contract: TRUNCATE stays
+  allowed (a reset is conspicuous; one altered row is not), and the
+  chain is what detects quiet edits — run `mix bizev.verify_chains`
+  after any load/backfill that disabled triggers.
+- The primary read (`:read`) is machinery-only (AshEvents' replay scans
+  through it); consumers use the region-scoped reads.
 
 ## Working with the DSL
 

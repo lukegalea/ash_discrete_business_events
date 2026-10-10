@@ -14,5 +14,8 @@ defmodule AshDiscreteBusinessEvents.Fixtures.Domain do
 
   resources do
     resource AshDiscreteBusinessEvents.Fixtures.SourceRecord
+    resource AshDiscreteBusinessEvents.Fixtures.Ledger
+    resource AshDiscreteBusinessEvents.Fixtures.Ledger.SimulationEvent
+    resource AshDiscreteBusinessEvents.Fixtures.Projection
   end
 end

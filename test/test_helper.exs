@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-# The fixture host and the macro-generated resource are the package
+# The fixture host and the macro-generated resources are the package
 # under test; make sure everything is loaded before any test runs.
 [
   AshDiscreteBusinessEvents.Fixtures,
@@ -10,6 +10,10 @@
   AshDiscreteBusinessEvents.Fixtures.Host,
   AshDiscreteBusinessEvents.Fixtures.Domain,
   AshDiscreteBusinessEvents.Fixtures.SourceRecord,
+  AshDiscreteBusinessEvents.Fixtures.Ledger,
+  AshDiscreteBusinessEvents.Fixtures.Ledger.SimulationEvent,
+  AshDiscreteBusinessEvents.Fixtures.LedgerClearForReplay,
+  AshDiscreteBusinessEvents.Fixtures.Projection,
   AshDiscreteBusinessEvents.Test.Repo
 ]
 |> Enum.each(&Code.ensure_loaded!/1)

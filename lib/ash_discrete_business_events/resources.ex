@@ -4,10 +4,10 @@
 
 defmodule AshDiscreteBusinessEvents.Resources do
   # credo:disable-for-this-file Credo.Check.Refactor.LongQuoteBlocks
-  # The `:source_record` macro's quote IS the deliverable: the whole
-  # temporal raw-landing resource, macro-generated on the host's base so
-  # the host's policies govern its actions natively (ADR 0035's reversal
-  # clause, §1.1). A resource-length quote is the point, not a smell.
+  # The macros' quotes ARE the deliverable: whole resources,
+  # macro-generated on the host's base so the host's policies govern
+  # their actions natively (ADR 0035's reversal clause, §1.1). A
+  # resource-length quote is the point, not a smell.
   @moduledoc """
   The resource-macro entry points hosts use to instantiate BIZEV's
   resources *on their own base*.
@@ -28,14 +28,65 @@ defmodule AshDiscreteBusinessEvents.Resources do
   of action a tenant must be able to govern, so the resource surface is
   macros from day one and stays macros.
 
-  The ledger macro additionally emits the `SimulationEvent` twin from the
-  same declaration (§5.6, SIM-NAMESPACE-ISOLATION): one schema, two
-  modules, two tables — simulated events can never be picked up by a
-  real projector's rebuild because the real projector never reads that
-  table. That mechanism lands in BIZEV-10.
+  ## `:source_record`
+
+  The temporal raw-landing layer (§1.3). See
+  `AshDiscreteBusinessEvents.SourceRecord`. The host declares the
+  resource's base (`use Ash.Resource`, domain, data layer, `postgres`
+  block) and the macro emits everything else.
+
+  ## `:ledger`
+
+  The dedicated event ledger (§1.4) plus its simulation twin (§5.6,
+  SIM-NAMESPACE-ISOLATION) — **one declaration, two modules, two
+  tables**. The host declares the base with the AshEvents extension:
+
+      defmodule MyApp.Platform.Ledger do
+        use Ash.Resource,
+          domain: MyApp.BusinessEvents,
+          data_layer: AshPostgres.DataLayer,
+          authorizers: [Ash.Policy.Authorizer],
+          extensions: [AshEvents.EventLog]
+
+        use AshDiscreteBusinessEvents.Resources, {:ledger,
+          repo: MyApp.Repo,
+          table: "ledger_events",
+          simulation_table: "ledger_simulation_events",
+          domain: MyApp.BusinessEvents}
+
+        policies do
+          # your grants govern record / read / cross_region_read natively
+        end
+      end
+
+  Options (repo, table, simulation_table required; the migration's chain
+  and immutability triggers are emitted per table from these names, so
+  the macro owns the `postgres` block for the ledger):
+
+    * `:repo`, `:table` — the ledger's repo and table (the chain and
+      immutability triggers are named after the table).
+    * `:simulation_table` — the twin's table. The twin module is emitted
+      as `Module.concat(host, SimulationEvent)`; its rows carry
+      `simulated: true` and a required `simulation_run` label. The twin
+      has its OWN per-region chains and its OWN immutability triggers;
+      projectors, rebuilders and cursors bind to the module, so a
+      simulated event cannot reach a real projector's rebuild — the real
+      projector never reads that table (type-level isolation, not
+      query-filter discipline).
+    * `:domain` — the twin's domain (the host ledger inherits its own
+      from `use Ash.Resource`; a generated module cannot).
+    * `:clear_records_for_replay` — optional; required before running
+      the log's `:replay` action (AshEvents raises without it).
+
+  The ledger's only write path is `record` — locked per region
+  (`RegionLockKeyGenerator`), chained per region (the emitted triggers),
+  delivery-idempotent, append-only. The stock `:create` that AshEvents
+  adds is removed by the macro's transformer: nothing writes this log
+  unlocked. See `AshDiscreteBusinessEvents.Ledger`.
   """
 
-  @doc false
+  @ledger_required_opts [:repo, :table, :simulation_table]
+
   defmacro __using__(which)
 
   defmacro __using__(:source_record) do
@@ -318,36 +369,131 @@ defmodule AshDiscreteBusinessEvents.Resources do
     end
   end
 
-  defmacro __using__(:ledger) do
-    quote do
-      # TODO(BIZEV-4): the dedicated AshEvents ledger (§1.4), plus the
-      # SimulationEvent twin (§5.6):
-      #
-      #   * rows ARE canonical discrete business events — event_kind +
-      #     canonical data, subject/actor descriptors (never FKs),
-      #     occurred_at vs observed_at vs commit-order sequence,
-      #     provenance per mapping rule, supersedes_event_id,
-      #     delivery_key idempotency, region + residency_tag
-      #   * `record` action takes the per-region advisory xact lock
-      #     BEFORE insert, so sequence order is commit order
-      #   * per-region hash chain (SHA-256 over row + previous per-region
-      #     hash), verification mix task
-      #   * append-only trigger; create-only — corrections are new rows
-      #   * `cross_region_read` as one gated, disclosed operator action
-      #   * a second generated module/table for simulated events
-      #     (module-bound projectors/chains/cursors)
-      #
-      # Note: create-only means NO valid_from/valid_until — the ledger is
-      # not temporal (docs/REVIEW.md, §4).
-      :ok
+  defmacro __using__({:ledger, opts}) do
+    opts =
+      Keyword.validate!(
+        opts || [],
+        @ledger_required_opts ++ [:domain, :clear_records_for_replay]
+      )
+      |> Enum.map(fn {key, value} -> {key, Macro.expand(value, __CALLER__)} end)
+
+    missing =
+      for key <- @ledger_required_opts, is_nil(Keyword.get(opts, key)), into: [], do: key
+
+    unless missing == [] do
+      names = Enum.map_join(missing, ", ", &":#{&1}")
+
+      raise ArgumentError,
+            "use AshDiscreteBusinessEvents.Resources, {:ledger, opts} requires #{names} " <>
+              "(the chain/immutability triggers are named after the table, so " <>
+              "the macro owns the ledger's postgres block)"
+    end
+
+    host_extensions = Module.get_attribute(__CALLER__.module, :extensions) || []
+
+    unless AshEvents.EventLog in host_extensions do
+      raise ArgumentError,
+            "the :ledger macro requires AshEvents.EventLog in the host resource's " <>
+              "`extensions:` (the ledger IS an AshEvents event log, §5.1)"
+    end
+
+    unless AshDiscreteBusinessEvents.Ledger.Extension in host_extensions do
+      raise ArgumentError,
+            "the :ledger macro requires AshDiscreteBusinessEvents.Ledger.Extension in the " <>
+              "host resource's `extensions:` (its transformer builds the ledger's " <>
+              "business-event columns, actions and triggers)"
+    end
+
+    simulation_table = Keyword.fetch!(opts, :simulation_table)
+    domain = opts[:domain]
+    clear_records_for_replay = opts[:clear_records_for_replay]
+
+    twin_module = Module.concat(__CALLER__.module, SimulationEvent)
+    twin_host_name = to_string(__CALLER__.module)
+
+    # The event_log section MUST be present before ash_events' own
+    # transformers run (they read these options to build the base
+    # columns), so it is emitted statically here; only
+    # clear_records_for_replay is optional, spliced as a literal AST node
+    # (this is a macro — unquote is available).
+    clear_fragment =
+      if clear_records_for_replay do
+        [{:clear_records_for_replay, [], [clear_records_for_replay]}]
+      else
+        []
+      end
+
+    event_log_section =
+      quote do
+        event_log do
+          primary_key_type(Ash.Type.UUIDv7)
+          record_id_type(:string)
+          advisory_lock_key_generator(AshDiscreteBusinessEvents.Ledger.RegionLockKeyGenerator)
+          public_fields(:all)
+          unquote_splicing(clear_fragment)
+        end
+      end
+
+    host_quote =
+      quote location: :keep do
+        unquote(event_log_section)
+
+        # The ledger's builder transformer reads everything from here.
+        @persist {:bizev_ledger, unquote(Macro.escape(opts))}
+      end
+
+    twin_use_opts =
+      [
+        data_layer: AshPostgres.DataLayer,
+        extensions: [AshEvents.EventLog, AshDiscreteBusinessEvents.Ledger.Extension]
+      ]
+      |> then(fn base ->
+        if domain, do: Keyword.put(base, :domain, domain), else: base
+      end)
+
+    twin_opts =
+      Keyword.merge(opts, simulation?: true)
+      |> Keyword.put(:table, simulation_table)
+
+    twin_moduledoc = """
+    The simulation twin of #{twin_host_name} — emitted by the same
+    `:ledger` macro declaration (§5.6, SIM-NAMESPACE-ISOLATION).
+
+    Same columns, same locked-and-chained record path, own table
+    (#{simulation_table}), own per-region chains. Every row carries
+    `simulated: true` and a required `simulation_run` label. Projectors,
+    rebuilders, cursors and chains bind to the MODULE: a simulated event
+    cannot reach a real projector's rebuild because the real projector
+    never reads this table. Isolation is type-level, not query-filter
+    discipline — "every query must remember to filter" has no query to
+    remember.
+    """
+
+    twin =
+      quote location: :keep do
+        @moduledoc unquote(twin_moduledoc)
+
+        use Ash.Resource, unquote(Macro.escape(twin_use_opts))
+
+        unquote(event_log_section)
+
+        @persist {:bizev_ledger, unquote(Macro.escape(twin_opts))}
+      end
+
+    quote location: :keep do
+      unquote(host_quote)
+
+      defmodule unquote(twin_module) do
+        unquote(twin)
+      end
     end
   end
 
   defmacro __using__(other) do
-    known = [:source_record, :ledger]
+    known = [":source_record", "{:ledger, opts}"]
 
     raise ArgumentError,
-          "use AshDiscreteBusinessEvents.Resources expects :source_record or :ledger, " <>
-            "got: #{inspect(other)} (known: #{inspect(known)})"
+          "use AshDiscreteBusinessEvents.Resources expects :source_record or " <>
+            "{:ledger, opts}, got: #{inspect(other)} (known: #{inspect(known)})"
   end
 end
