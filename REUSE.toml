@@ -12,11 +12,14 @@ version = 1
 path = [
   ".credo.exs",
   ".formatter.exs",
+  ".github/**/*.yml",
   ".gitignore",
   "README.md",
   "REUSE.toml",
   "docs/**/*.md",
   "mix.lock",
+  "priv/resource_snapshots/**/*.json",
+  "priv/test_repo/migrations/*.exs",
   "usage-rules.md",
 ]
 precedence = "aggregate"

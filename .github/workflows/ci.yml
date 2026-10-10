@@ -1,0 +1,89 @@
+# SPDX-FileCopyrightText: 2026 ash_discrete_business_events contributors <https://github.com/lukegalea/ash_discrete_business_events>
+#
+# SPDX-License-Identifier: MIT
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+# A failed run tells you nothing if a later push is already superseding it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  MIX_ENV: test
+
+jobs:
+  test:
+    name: mix test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # The declared floor (AshDiscreteBusinessEvents.Test.Repo.min_pg_version/0)
+        # is PG18 — the temporal write machinery needs it (`RETURNING old`)
+        # and the suite creates and migrates its own database on the
+        # service. Plain postgres:18; no extra extensions beyond
+        # btree_gist/uuid-ossp, which the migrations install.
+        image: postgres:18
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          TZ: UTC
+          PGTZ: UTC
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-beam
+      - run: mix test
+
+  compile-test:
+    name: MIX_ENV=test mix compile --warnings-as-errors
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-beam
+      # Dependencies compile in their own invocation: a cold cache would
+      # otherwise compile a dependency inside the gate below, and a
+      # dependency's own warning would turn into a red build of ours.
+      - run: mix deps.compile
+      - run: mix compile --force --warnings-as-errors
+
+  format:
+    name: mix format --check-formatted
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-beam
+      - run: mix format --check-formatted
+
+  credo:
+    name: mix credo --strict
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-beam
+      # ash_credo's checks introspect compiled modules; an uncompiled project
+      # emits "could not load" diagnostics instead of real results.
+      - run: mix deps.compile
+      - run: mix compile
+      - run: mix credo --strict
+
+  reuse:
+    name: REUSE compliance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: fsfe/reuse-action@v5

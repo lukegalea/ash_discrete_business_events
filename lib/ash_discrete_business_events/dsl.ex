@@ -226,7 +226,13 @@ defmodule AshDiscreteBusinessEvents.Dsl do
           end
         end
 
-        mapping :opportunity_stage_changed, source: {:salesforce, :opportunity} do
+        # Block form — hosts copy this example first, so it must compile
+        # as shown. (ora-3 §13: a keyword list before a do-block parses as
+        # a third macro argument, which Spark entity macros cannot
+        # receive — the combined `mapping :name, source: {...} do ... end`
+        # form does not compile.)
+        mapping :opportunity_stage_changed do
+          source {:salesforce, :opportunity}
           # closed operator vocabulary, §5.3
         end
       end
