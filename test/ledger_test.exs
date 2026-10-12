@@ -101,6 +101,45 @@ defmodule AshDiscreteBusinessEvents.LedgerTest do
     end
   end
 
+  describe "caller context reaches the append" do
+    test "the caller's actor is the append's actor", %{subject: subject} do
+      assert_raise Ash.Error.Forbidden, fn ->
+        Ledger.record!(LedgerEvents.event(subject_external_id: subject),
+          actor: %{blocked?: true}
+        )
+      end
+    end
+
+    test "authorize?: false on record is authorize?: false on the append", %{subject: subject} do
+      event =
+        Ledger.record!(LedgerEvents.event(subject_external_id: subject),
+          actor: %{blocked?: true},
+          authorize?: false
+        )
+
+      assert event.subject_external_id == subject
+    end
+  end
+
+  describe "optional arguments" do
+    test "a record naming only the required arguments lands", %{subject: subject} do
+      event =
+        Ledger.record!(%{
+          event_kind: :"opportunity.created",
+          region: :us,
+          residency_tag: "us",
+          subject_type: "crm.opportunity",
+          subject_external_id: subject,
+          occurred_at: ~U[2026-10-01 14:03:00.000000Z],
+          provenance: LedgerEvents.provenance()
+        })
+
+      assert event.subject_external_id == subject
+      assert event.actor_display == nil
+      assert event.delivery_key == nil
+    end
+  end
+
   describe "delivery idempotency (per region)" do
     test "a repeated delivery_key collapses to the existing row", %{subject: subject} do
       first =
