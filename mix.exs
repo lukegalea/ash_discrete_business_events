@@ -55,17 +55,16 @@ defmodule AshDiscreteBusinessEvents.MixProject do
       {:ash_postgres, "~> 2.14"},
       {:spark, "~> 2.7"},
 
-      # The ledger substrate (BIZEV-4) and the lineage contract (BIZEV-6).
-      # Test-only until each slice lands: the ledger macro consumes the
-      # ash_events fork (temporal as-of support, upstream #104), lineage
-      # consumes ash_open_lineage's run-id/leak-rule vocabulary. Keeping
-      # them out of the compile-time graph now is the honest statement of
-      # what BIZEV-2 actually depends on: ash, ash_postgres, spark.
-      {:ash_events,
-       github: "lukegalea/ash_events",
-       branch: "temporal-as-of-support-0.7",
-       only: :test,
-       runtime: false},
+      # The ledger substrate (BIZEV-4 landed it): the ledger IS an
+      # AshEvents event log, and the package compiles against it
+      # (`RegionLockKeyGenerator` uses its lock-key behaviour, the ledger
+      # transformer orders itself after its transformers). A real
+      # dependency, so a host compiles ash_events before this package —
+      # the ash_events fork (temporal as-of support, upstream #104).
+      {:ash_events, github: "lukegalea/ash_events", branch: "temporal-as-of-support-0.7"},
+
+      # The lineage contract (BIZEV-6): test-only until that slice lands —
+      # lineage consumes ash_open_lineage's run-id/leak-rule vocabulary.
       {:ash_open_lineage, github: "lukegalea/ash_open_lineage", only: :test, runtime: false},
 
       # Dev hygiene: static analysis (credo with the ash_credo plugin).
