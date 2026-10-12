@@ -29,6 +29,10 @@ defmodule AshDiscreteBusinessEvents.Ledger.Record do
 
   use Ash.Resource.Actions.Implementation
 
+  @appended ~w(region residency_tag subject_type subject_external_id subject_stream
+               actor_type actor_external_id actor_display occurred_at observed_at context
+               provenance supersedes_event_id delivery_key data)a
+
   require Ash.Query
 
   @impl true
@@ -49,23 +53,9 @@ defmodule AshDiscreteBusinessEvents.Ledger.Record do
   end
 
   defp append(resource, args, opts) do
-    append_attrs = %{
-      region: args.region,
-      residency_tag: args.residency_tag,
-      subject_type: args.subject_type,
-      subject_external_id: args.subject_external_id,
-      subject_stream: args.subject_stream,
-      actor_type: args.actor_type,
-      actor_external_id: args.actor_external_id,
-      actor_display: args.actor_display,
-      occurred_at: args.occurred_at,
-      observed_at: args.observed_at,
-      context: args.context,
-      provenance: args.provenance,
-      supersedes_event_id: args.supersedes_event_id,
-      delivery_key: args.delivery_key,
-      data: args.data
-    }
+    # Optional arguments a caller left out are absent from `args`, not
+    # nil, so every column is read with Map.take; nils are dropped below.
+    append_attrs = Map.take(args, @appended)
 
     sim_extra =
       if Map.has_key?(args, :simulation_run),
@@ -99,7 +89,7 @@ defmodule AshDiscreteBusinessEvents.Ledger.Record do
   # winner instead of an error. Any other error passes through.
   defp retry_on_delivery_race(error, resource, args, opts) do
     delivered? =
-      args.delivery_key != nil and
+      Map.get(args, :delivery_key) != nil and
         Exception.message(error) =~ "has already been delivered"
 
     if delivered? do
@@ -113,7 +103,7 @@ defmodule AshDiscreteBusinessEvents.Ledger.Record do
   end
 
   defp delivered_already(resource, args, opts) do
-    case args.delivery_key do
+    case Map.get(args, :delivery_key) do
       delivery_key when is_binary(delivery_key) ->
         resource
         |> Ash.Query.for_read(:by_region, %{region: args.region}, opts)
