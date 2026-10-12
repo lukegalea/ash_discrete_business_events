@@ -29,7 +29,17 @@ defmodule AshDiscreteBusinessEvents.Fixtures.Ledger do
   # the HOST's policy block governs record / the region-scoped reads /
   # cross_region_read natively (ADR 0035's reversal clause). Permissive
   # in the fixture; a real tenant gates the alarmed cross-region door.
+  #
+  # The one refusal is on the internal `:append`: an actor flagged
+  # `blocked?` may call `record` but not reach the insert. It exists to
+  # prove `record` hands its caller's actor (and `authorize?`) to the
+  # append — see the "caller context" tests.
   policies do
+    policy action(:append) do
+      forbid_if actor_attribute_equals(:blocked?, true)
+      authorize_if always()
+    end
+
     policy always() do
       authorize_if always()
     end
