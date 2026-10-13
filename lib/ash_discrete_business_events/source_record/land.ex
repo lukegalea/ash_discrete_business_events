@@ -38,8 +38,8 @@ defmodule AshDiscreteBusinessEvents.SourceRecord.Land do
     # nothing (which would misread "identity unseen" and open an
     # overlapping period).
     auth = [
-      actor: context[:actor],
-      tenant: context[:tenant],
+      actor: context.actor,
+      tenant: context.tenant,
       authorize?: Map.get(context, :authorize?, true)
     ]
 
