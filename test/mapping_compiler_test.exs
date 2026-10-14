@@ -11,7 +11,9 @@ defmodule AshDiscreteBusinessEvents.MappingCompilerTest do
   classifier seam.
   """
 
-  use ExUnit.Case, async: true
+  # The classifier fixtures are named Agents — concurrent async tests
+  # starting the same named process race (already_started). Non-async.
+  use ExUnit.Case, async: false
 
   alias AshDiscreteBusinessEvents.Fixtures.Classifier
   alias AshDiscreteBusinessEvents.Fixtures.Host

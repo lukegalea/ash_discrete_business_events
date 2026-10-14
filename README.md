@@ -96,8 +96,8 @@ end
 | **BIZEV-2** | Contracts frozen — DSL sections, ledger row shape and SourceRecord identity pinned by fixture tests; review checklist (`docs/REVIEW.md`) |
 | **BIZEV-3** | SourceRecord: the temporal raw-landing layer |
 | **BIZEV-4** | **The Ledger: the dedicated AshEvents log — locked, chained, append-only** |
-| **BIZEV-5** (this branch) | **The mapping engine: rules as versioned, content-hashed data** |
-| BIZEV-6 | Lineage integration (batch granularity, leak-rule test) |
+| **BIZEV-5** | **The mapping engine: rules as versioned, content-hashed data** |
+| **BIZEV-6** (this branch) | **Lineage integration: the run-id contract, batch-granular emission, the leak rule** |
 | BIZEV-7 | Salesforce Bulk API 2.0 vertical + fixture corpus |
 | BIZEV-8 | Temporal canonical projections over the ledger |
 | BIZEV-9 | Corrections & late-arrival semantics |
@@ -373,6 +373,92 @@ mapping may name a module implementing the
 reason}`, or `{:error, term}`. An ash_decisions DMN table behind this
 behaviour is the host's wiring — the package ships the seam and the
 behaviour, never the dependency.
+
+## Lineage (BIZEV-6)
+
+Lineage maps the graph of *what moved* — never who moved it or for whom.
+The package exports the contract (`AshDiscreteBusinessEvents.Lineage`) so
+host-emitted STARTs and package-emitted COMPLETEs share the vocabulary by
+construction, and `AshDiscreteBusinessEvents.RunContext` so fan-outs
+inherit parent threading instead of re-deriving it.
+
+**Emission is batch-granular and template-owned** (design §3.1): the unit
+of data movement is the sync run (or webhook batch), not the row — N landed
+rows are ONE job. `Lineage.run/3` is the job template, ready-made: START
+before the batch, COMPLETE after, FAIL loudly on a raise/throw/exit
+(re-raised). The AshOpenLineage notifier is registered on NO BIZEV
+resource — high-volume machine rows would turn per-row COMPLETEs into
+noise (test-pinned, including "landing N rows emits zero events").
+
+**The structural naming vocabulary** (§3.2) — fixed here, shared everywhere:
+
+| Thing | Name |
+|---|---|
+| sync job | `bizev.sync.<source>.<stream>` |
+| webhook job | `bizev.webhook.<source>` |
+| replay job | `bizev.replay.<projection>` |
+| raw dataset | `bizev.raw.<source>.<stream>` |
+| ledger dataset | `bizev.ledger.<region>` — per-region; a cross-region total is never one dataset |
+| mapping-rule version | `bizev.rules.<mapping>.v<hash8>` — a mapping version is an INPUT dataset |
+
+Stream ranges appear only as facet-level **counts** (`:counts` on
+`emit_complete/3`), never boundary values. The leak rule is an acceptance
+test with a bites-proof: actor, tenant, customer and filter-value strings
+are injected into every channel the API accepts and asserted absent from
+the emitted events — after the checker is proven to fail on a
+deliberately-leaking map first.
+
+**Run identity is split by what the run must join to** (§3.3):
+
+- *Operational* runs (sync, webhook, corrections, resets) are
+  **correlation-derived** — `Lineage.run_id(:operational)` is the host
+  `CorrelationProvider`'s id: one lookup joins the audit log.
+- *Derivation* runs (replays, re-mapping backfills) are
+  **content-derived** — `Lineage.run_id(%{purpose:, ledger_range:,
+  mapping_versions:})` hashes the inputs into a deterministic UUID, so an
+  identical replay maps to the SAME run instead of minting a look-alike.
+  Lineage carries the derivation edge; the audit log carries the
+  operation.
+
+```elixir
+job = AshDiscreteBusinessEvents.Lineage.job(:sync,
+  source: :salesforce, stream: :opportunity)
+
+run_id = AshDiscreteBusinessEvents.Lineage.run_id(:operational)
+
+AshDiscreteBusinessEvents.Lineage.run(job, run_id, fn ->
+  # the batch: land N rows, advance the cursor — one job, one run
+  :ok
+end)
+
+# …or with facet-level counts on the outputs:
+AshDiscreteBusinessEvents.Lineage.emit_complete(job, run_id,
+  counts: %{"bizev.raw.salesforce.opportunity" => 42}
+)
+```
+
+**Fan-out parent propagation** (§3.4) — the process dictionary does not
+cross process boundaries, so the parent identity travels as data:
+
+```elixir
+# the job template puts the parent into Oban args as a STRING key
+# (atom keys miss silently after the JSON round-trip):
+args = AshDiscreteBusinessEvents.RunContext.put_parent(args, parent_run_id)
+
+# worker entry re-establishes the scope (host correlation wiring is a
+# {module, function} of arity 2 — Correlation.with_correlation/2's shape —
+# under config :ash_discrete_business_events, :scope_establisher):
+AshDiscreteBusinessEvents.RunContext.enter_from_args(args, fn ->
+  # the batch — Lineage.parent_opts/0 now resolves the parent facet
+end)
+
+# Task fan-outs pass the parent explicitly — spawn does not inherit scope:
+AshDiscreteBusinessEvents.RunContext.fan_out(items, fn item -> ... end)
+```
+
+A nested run (depth > 0 per the correlation provider) whose parent id
+resolves emits the `parent` run facet; omitted, never fabricated,
+otherwise.
 
 ## Review discipline
 
