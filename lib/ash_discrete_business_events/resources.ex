@@ -489,11 +489,152 @@ defmodule AshDiscreteBusinessEvents.Resources do
     end
   end
 
+  defmacro __using__(:mapping_version) do
+    quote location: :keep do
+      # ── Versioned mapping artifacts (§5.3, the snapshot lifecycle) ──────
+      # One row per compiled mapping declaration, content-addressed: the
+      # hash IS the identity (declared operators in DECLARATION ORDER are
+      # its input — ora-3 §13.3). The lifecycle is draft → validate →
+      # activate; `validate` re-runs the compiler's structural checks over
+      # the STORED artifact; `activate` freezes (and supersedes the name's
+      # previous active — one active version per mapping name).
+      # Content is immutable after draft: a changed declaration mints a
+      # new version, never a rewrite.
+      attributes do
+        uuid_primary_key :id
+
+        attribute :mapping_name, :string do
+          allow_nil? false
+          public? true
+          constraints max_length: 256
+
+          description "The declared mapping's name — the ledger's mapping_name provenance pointer, and the event kind the rule emits."
+        end
+
+        attribute :version_hash, :string do
+          allow_nil? false
+          public? true
+          constraints max_length: 8
+
+          description "The content hash (8 hex chars of the artifact's SHA-256) — the ledger's mapping_version_hash provenance pointer, and half of this row's identity."
+        end
+
+        attribute :source_name, :atom do
+          allow_nil? false
+          public? true
+          description "The declared source the rule reads — first half of the source tuple."
+        end
+
+        attribute :stream_name, :atom do
+          allow_nil? false
+          public? true
+          description "The declared stream the rule reads — second half of the source tuple."
+        end
+
+        attribute :status, :atom do
+          allow_nil? false
+          default :draft
+          public? true
+          constraints one_of: [:draft, :validated, :active]
+
+          description "The lifecycle: draft → validate (compiler checks re-run over the stored artifact) → activate (freeze; supersedes). Content never changes after draft."
+        end
+
+        attribute :artifact, :map do
+          allow_nil? false
+          public? true
+
+          description "The canonical artifact: name, source, and the operators in declaration order — the hashed form, stored as replayable data. Provenance on a ledger row points HERE, not at a code revision."
+        end
+
+        create_timestamp :inserted_at
+        update_timestamp :updated_at
+      end
+
+      identities do
+        identity :unique_name_hash, [:mapping_name, :version_hash]
+      end
+
+      actions do
+        defaults [:read]
+
+        read :by_name_and_hash do
+          get? true
+          argument :mapping_name, :string, allow_nil?: false
+          argument :version_hash, :string, allow_nil?: false
+          prepare {AshDiscreteBusinessEvents.MappingVersion.Preparations.ByNameAndHash, []}
+        end
+
+        read :active do
+          get? true
+          argument :mapping_name, :string, allow_nil?: false
+          prepare {AshDiscreteBusinessEvents.MappingVersion.Preparations.Active, []}
+        end
+
+        create :draft do
+          description "Records a freshly compiled declaration as a draft version. Content is frozen from here — changes mint new versions."
+          accept [:mapping_name, :version_hash, :source_name, :stream_name, :artifact]
+        end
+
+        update :validate do
+          description "Re-runs the compiler's structural checks over the STORED artifact; a draft that lost nothing becomes :validated."
+          accept []
+          validate attribute_equals(:status, :draft)
+          change {AshDiscreteBusinessEvents.MappingVersion.Changes.ValidateStoredArtifact, []}
+          change set_attribute(:status, :validated)
+        end
+
+        update :activate do
+          description """
+          Freezes a validated version as the mapping's active one, superseding the
+          name's previous active (demoted to :validated — activation is the pointer
+          move, history is never rewritten). The ledger's provenance joins
+          mapping_name + mapping_version_hash to THIS row.
+          """
+
+          accept []
+          validate attribute_equals(:status, :validated)
+          change {AshDiscreteBusinessEvents.MappingVersion.Changes.ActivateSuperseding, []}
+          change set_attribute(:status, :active)
+        end
+
+        update :demote do
+          description """
+          INTERNAL: the superseded previous active steps back to :validated — its
+          content stays exactly as proven; it is simply no longer the pointer's
+          target.
+          """
+
+          accept []
+          validate attribute_equals(:status, :active)
+          change set_attribute(:status, :validated)
+        end
+      end
+
+      code_interface do
+        define :by_name_and_hash,
+          action: :by_name_and_hash,
+          args: [:mapping_name, :version_hash],
+          get?: true,
+          not_found_error?: false
+
+        define :active,
+          action: :active,
+          args: [:mapping_name],
+          get?: true,
+          not_found_error?: false
+
+        define :validate_version, action: :validate
+        define :activate_version, action: :activate
+      end
+    end
+  end
+
   defmacro __using__(other) do
-    known = [":source_record", "{:ledger, opts}"]
+    known = [":source_record", "{:ledger, opts}", ":mapping_version"]
 
     raise ArgumentError,
-          "use AshDiscreteBusinessEvents.Resources expects :source_record or " <>
-            "{:ledger, opts}, got: #{inspect(other)} (known: #{inspect(known)})"
+          "use AshDiscreteBusinessEvents.Resources expects :source_record, {:ledger, opts} " <>
+            "or :mapping_version, got: #{inspect(other)} (known: #{inspect(known)})"
   end
 end

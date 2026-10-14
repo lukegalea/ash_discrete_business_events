@@ -14,9 +14,12 @@ defmodule AshDiscreteBusinessEvents.Extension do
   use Spark.Dsl.Extension,
     sections: [AshDiscreteBusinessEvents.Dsl.business_events()],
     transformers: [
-      # Registered in BIZEV-2 to freeze the extension's transformer list;
-      # both are pass-throughs until the mapping engine lands (BIZEV-5).
+      # The mapping compiler's halves: sources verified, artifacts hashed
+      # (declaration order is the hash's input — ora-3 §13.3).
       AshDiscreteBusinessEvents.Transformers.VerifyMappingSources,
       AshDiscreteBusinessEvents.Transformers.HashMappings
+    ],
+    verifiers: [
+      AshDiscreteBusinessEvents.Verifiers.VerifyMappings
     ]
 end

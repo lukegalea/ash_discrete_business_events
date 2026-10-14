@@ -4,17 +4,53 @@
 
 defmodule AshDiscreteBusinessEvents.Transformers.VerifyMappingSources do
   @moduledoc """
-  TODO(BIZEV-5): verify each `mapping`'s `source:` tuple names a declared
-  `source` and one of its `stream`s, failing compilation otherwise.
+  Verifies each `mapping`'s `source:` tuple names a DECLARED `source`
+  and one of its `stream`s, failing compilation otherwise.
 
-  Registered on the extension now (BIZEV-2 freezes the extension's
-  transformer list) and a pass-through until the mapping engine lands —
-  a transformer that half-verifies is worse than one that verifies at
-  all, because the false confidence outlives the scaffold.
+  A mapping wired to an undeclared stream would read payloads no job
+  ever lands — the compile is where that lie dies. (Registered in
+  BIZEV-2 as a frozen stub; this is its BIZEV-5 body.)
   """
 
   use Spark.Dsl.Transformer
 
+  alias AshDiscreteBusinessEvents.Info
+
   @impl true
-  def transform(dsl_state), do: {:ok, dsl_state}
+  def transform(dsl) do
+    sources = Info.sources(dsl)
+
+    dsl
+    |> Info.mappings()
+    |> Enum.reduce_while({:ok, dsl}, fn mapping, {:ok, dsl} ->
+      {source_name, stream_name} = mapping.source
+      source = Info.source(dsl, source_name)
+
+      cond do
+        source == nil ->
+          {:halt,
+           {:error,
+            Spark.Error.DslError.exception(
+              module: Spark.Dsl.Transformer.get_persisted(dsl, :module),
+              path: [:business_events, :mapping, mapping.name],
+              message:
+                "mapping reads from #{inspect(source_name)}, which is not a declared source"
+            )}}
+
+      Info.stream_of(source, stream_name) == nil ->
+          {:halt,
+           {:error,
+            Spark.Error.DslError.exception(
+              module: Spark.Dsl.Transformer.get_persisted(dsl, :module),
+              path: [:business_events, :mapping, mapping.name],
+              message:
+                "mapping reads from stream #{inspect(stream_name)}, which is not declared " <>
+                  "on source #{inspect(source_name)}"
+            )}}
+
+        true ->
+          {:cont, {:ok, dsl}}
+      end
+    end)
+  end
 end

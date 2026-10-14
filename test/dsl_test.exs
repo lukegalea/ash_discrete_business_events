@@ -73,10 +73,18 @@ defmodule AshDiscreteBusinessEvents.DslTest do
       assert %AshDiscreteBusinessEvents.Dsl.Mapping{} = mapping
       assert mapping.name == :opportunity_stage_changed
       assert Info.mapping_source(mapping) == {:salesforce, :opportunity}
-      # The closed operator vocabulary lands in BIZEV-5; until then the
-      # body is a placeholder and the ops list is empty — the schema
-      # refuses any operator declaration on sight.
-      assert mapping.ops == []
+
+      # BIZEV-5: the closed operator vocabulary lands in declaration order,
+      # and the transformer compiles the content hash onto the entity.
+      assert Enum.map(mapping.ops, & &1.op) == [:map, :map, :map, :unmapped_because]
+      assert Enum.map(mapping.ops, & &1.target) == [:stage, :amount, :occurred_at, :owner_email]
+      assert byte_size(mapping.hash) == 8
+      assert mapping.artifact["ops"] |> length() == 4
+
+      # The artifact's ops preserve DECLARATION order (ora-3 §13.3) —
+      # the hash's input.
+      assert Enum.map(mapping.artifact["ops"], & &1["target"]) ==
+               ["stage", "amount", "occurred_at", "owner_email"]
     end
 
     test "unknown mapping names return nil" do
@@ -95,6 +103,11 @@ defmodule AshDiscreteBusinessEvents.DslTest do
         use AshDiscreteBusinessEvents, domains: [AshDiscreteBusinessEvents.Fixtures.Domain]
 
         business_events do
+          source :salesforce do
+            region :us
+            stream :opportunity
+          end
+
           mapping(:opportunity_stage_changed, source: {:salesforce, :opportunity})
         end
       end
