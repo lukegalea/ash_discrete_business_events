@@ -104,6 +104,25 @@ defmodule AshDiscreteBusinessEvents.Projections do
       def drain(region, opts \\ []) do
         AshDiscreteBusinessEvents.Projections.Drain.drain(__MODULE__, region, opts)
       end
+
+      @doc """
+      Drains one SIMULATION RUN — from the ledger's SimulationEvent twin,
+      never the real log — through this projector, under the
+      `sim:`-prefixed checkpoint namespace (SIM-NAMESPACE-ISOLATION
+      AC-2): a simulation drain's cursor can never alias a real drain's
+      on the same projector and region, and two simulation runs never
+      share one. The projection target is the host's choice (what-if
+      analyses typically target a separate projection resource).
+      """
+      @spec drain_simulation(String.t(), atom(), keyword()) :: non_neg_integer()
+      def drain_simulation(simulation_run, region, opts \\ []) do
+        AshDiscreteBusinessEvents.Projections.Drain.simulation(
+          __MODULE__,
+          simulation_run,
+          region,
+          opts
+        )
+      end
     end
   end
 end

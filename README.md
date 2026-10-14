@@ -577,6 +577,41 @@ exactly one new period and exactly one superseding event per restated
 truth point. Re-sync can never duplicate (delivery + source idempotency)
 and never silently revises (corrections are visible events).
 
+## Simulations — SIM-NAMESPACE-ISOLATION CLOSED (BIZEV-10)
+
+The simulation twin is **one macro, two modules, two tables**: declaring
+`{:ledger, opts}` emits the real ledger AND its `SimulationEvent` twin
+(same §1.4 columns; sim rows additionally carry `simulated: true` and a
+required `simulation_run` label, set at record time). Simulated events
+are structurally unreachable from the real side — the isolation is the
+schema, not a filter anyone must remember. The ticket's acceptance
+criteria, closed:
+
+- **AC-1 — rebuilds never manufacture history**: real projector
+  rebuilds-from-zero read the real ledger's feed only; simulated events
+  (even same-kind, same-shape ones) never appear in a rebuilt state.
+  Pinned at the data layer *and* at the cache layer.
+- **AC-2 — the cache namespace extends the isolation**: simulation
+  drains key their checkpoints `sim:<name>.<region>:<run>` — real
+  drains key `<name>.<region>` — so a simulation drain's cursor can
+  never alias, satisfy, or be satisfied by a real drain's checkpoint on
+  the same projector and region, and two simulation runs never share
+  one. `sim:` is a reserved prefix for real projector names.
+  `Projections.drain_simulation/3` (or `Drain.simulation/4`) is the
+  supported entry; the twin feed filters on the run label the rows
+  carry.
+- **AC-3 — unmistakable by shape, labeled by contract**: the package
+  ships no UI, so the "visibly labeled" requirement lands as the
+  label/query contract: every twin row carries `simulated: true` +
+  `simulation_run`; a row without a run label cannot come from the
+  twin, and a row in the real ledger cannot be simulated.
+  `AshDiscreteBusinessEvents.simulation_runs/1` is the supported read —
+  one map per run (`simulation_run`, `events`, `subjects`,
+  first/last observed), for any surface that lists event history.
+
+The regression suite lives in `test/simulation_isolation_test.exs` —
+its passing is the closure statement.
+
 ## Projections (BIZEV-8)
 
 The ledger IS an AshEvents log, so the projector engine drains business
