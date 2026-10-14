@@ -577,6 +577,63 @@ exactly one new period and exactly one superseding event per restated
 truth point. Re-sync can never duplicate (delivery + source idempotency)
 and never silently revises (corrections are visible events).
 
+## Retention & GDPR (BIZEV-12, §9 risk 5)
+
+Raw SaaS payloads are the erasable class; ledger canonical payloads are
+**PII-minimal by design** (BIZEV-5's mapping rules — structural facts
+only). This slice gives the raw layer its retention machinery.
+Explicitly does NOT resolve ADR 0024 platform-wide.
+
+**The partitioned raw layer**: SourceRecord's table is RANGE-partitioned
+by `fetched_at` (the observation instant — §1.3's period basis),
+monthly, hand-maintained (ash_postgres codegen does not model
+partitioning). A DEFAULT partition catches unsliced months;
+`Retention.ensure_partition!/3` creates an explicit month with its
+per-partition identity exclusion (the identity is enforced WITHIN a
+partition; cross-month overlaps are precluded operationally — periods
+are `[fetched_at, next observation)` and backdated landings are
+refused). `sim:` — nothing to do with partitions; that's BIZEV-10's
+namespace.
+
+**Drop-partition purge** — an explicit, audited operator action:
+
+```elixir
+AshDiscreteBusinessEvents.Retention.purge_before(
+  MyApp.Platform.SourceRecord,
+  MyApp.Platform.Ledger,
+  before: DateTime.add(DateTime.utc_now(), -365, :day),
+  region: :us,
+  confirmed: true   # destructive; refuses without explicit opt-in
+)
+# {:ok, %{dropped: ["source_records_2026_01", …], rows: 4_213, tombstones: 3}}
+```
+
+Whole partitions drop at once (cheap, exact); each drop records a ledger
+tombstone — `:"retention.partition_purged"` with the partition name and
+row count. **Structural facts only** — never payloads (the leak rule).
+The DEFAULT partition is never dropped (mixed data; purge it by erasure
+or consciously by hand).
+
+**Erasure-as-event**: `Retention.erase_subject/5` records the tombstone
+FIRST — `:"retention.subject_erased"` with the subject descriptor — then
+deletes the subject's raw rows through the table machinery. The tombstone
+is the ledger's native answer to GDPR: it records THAT a subject's raw
+data was purged, while the ledger's canonical facts stay (PII-minimal by
+design).
+
+**The honesty note (re-sync after erasure)**: erasure is LOCAL
+retention, not source revision. The SOURCE still holds its data; the
+next sync re-lands the subject's current state as NEW history (fresh
+periods at the fetch instant). The erased instants stay erased — a
+re-sync never resurrects purged history, it re-observes the present.
+
+**PII minimization at mapping time**: the closed vocabulary now carries
+a lint-level guard — canonical targets named like obvious direct
+personal data (`email`, `phone`, `ssn`, …) are REFUSED at compile time;
+PII belongs in the raw layer, and `unmapped_because` is the documented
+way to name the gap. Not a PII oracle — it catches the obvious,
+cheaply, at compile time.
+
 ## The BPMN trigger bridge (BIZEV-13, §5.2)
 
 ADR 0030's EventSource adapter pattern, with the audit trigger's division

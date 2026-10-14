@@ -27,6 +27,14 @@ defmodule AshDiscreteBusinessEvents.Transformers.VerifyMappings do
   alias AshDiscreteBusinessEvents.Info
   alias AshDiscreteBusinessEvents.Mappings.Compiler
 
+  # The lint-level PII guard (§9 risk 5's minimization-at-mapping-time):
+  # these canonical TARGET keys are refused outright — identifiers this
+  # obviously personal belong in the raw layer only, documented with
+  # `unmapped_because`. NOT a PII oracle: an exhaustive classifier is
+  # impossible; this catches the obvious, cheaply, at compile time.
+  @pii_targets ~w(email e_mail email_address mail phone phone_number mobile
+                  ssn social_security_number tax_id national_id)
+
   @impl true
   def transform(dsl) do
     module = Spark.Dsl.Transformer.get_persisted(dsl, :module)
@@ -36,7 +44,7 @@ defmodule AshDiscreteBusinessEvents.Transformers.VerifyMappings do
       |> Info.mappings()
       |> Enum.flat_map(fn mapping ->
         case Compiler.verify(Compiler.artifact(mapping)) do
-          :ok -> []
+          :ok -> pii_problems(mapping)
           {:error, problems} -> Enum.map(problems, &"[#{mapping.name}] #{&1}")
         end
       end)
@@ -53,5 +61,18 @@ defmodule AshDiscreteBusinessEvents.Transformers.VerifyMappings do
            message: Enum.join(problems, "; ")
          )}
     end
+  end
+
+  defp pii_problems(mapping) do
+    mapping.ops
+    |> Enum.filter(fn op ->
+      (op.target && Atom.to_string(op.target) in @pii_targets) and
+        op.op != :unmapped_because
+    end)
+    |> Enum.map(fn op ->
+      "[#{mapping.name}] canonical target `#{op.target}` looks like direct personal data " <>
+        "(#{op.op}) — PII stays in the raw layer; map a structural fact instead or document " <>
+        "the gap with `unmapped_because` (§9 risk 5, minimization at mapping time)"
+    end)
   end
 end
