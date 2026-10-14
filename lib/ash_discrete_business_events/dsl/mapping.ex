@@ -21,6 +21,7 @@ defmodule AshDiscreteBusinessEvents.Dsl.Mapping do
             hash: nil,
             artifact: nil,
             classify_with: nil,
+            process_key: nil,
             __spark_metadata__: nil
 
   @type t :: %__MODULE__{
@@ -29,6 +30,7 @@ defmodule AshDiscreteBusinessEvents.Dsl.Mapping do
           ops: [AshDiscreteBusinessEvents.Dsl.Mapping.Op.t()],
           hash: String.t() | nil,
           artifact: map() | nil,
-          classify_with: module() | nil
+          classify_with: module() | nil,
+          process_key: String.t() | nil
         }
 end

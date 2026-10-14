@@ -279,6 +279,7 @@ defmodule AshDiscreteBusinessEvents.Adapters.SalesforceBulk20.FixtureCorpus do
       occurred_at: canonical.occurred_at,
       provenance: canonical.provenance,
       supersedes_event_id: supersedes,
+      process_ref: Map.get(canonical, :process_ref),
       data: canonical.data
     })
   end

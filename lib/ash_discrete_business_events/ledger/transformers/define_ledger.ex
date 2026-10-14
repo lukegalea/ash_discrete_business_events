@@ -138,6 +138,11 @@ defmodule AshDiscreteBusinessEvents.Ledger.Transformers.DefineLedger do
          public?: true,
          description:
            "Corrections are new events, never rewrites (§7): this row supersedes the event with that id. The original is never rewritten — chain integrity."},
+        {:process_ref, :string,
+         public?: true,
+         constraints: [max_length: 512],
+         description:
+           "The process correlation key (§5.2, optional): the BPMN-side pointer for events that are process-relevant (opportunity closed → fulfillment process). Set by the mapping's `process_key` or the caller; opaque to this package."},
         {:delivery_key, :string,
          public?: true,
          constraints: [max_length: 512],
@@ -266,7 +271,8 @@ defmodule AshDiscreteBusinessEvents.Ledger.Transformers.DefineLedger do
     accept =
       ~w(region residency_tag subject_type subject_external_id subject_stream actor_type
          actor_external_id actor_display occurred_at observed_at context provenance
-         supersedes_event_id delivery_key data)a ++ if sim?, do: [:simulation_run], else: []
+         supersedes_event_id process_ref delivery_key data)a ++
+        if sim?, do: [:simulation_run], else: []
 
     {:ok, dsl} =
       Builder.add_action(dsl, :create, :append,
@@ -305,6 +311,7 @@ defmodule AshDiscreteBusinessEvents.Ledger.Transformers.DefineLedger do
         arg(:context, :map, allow_nil?: true),
         arg(:provenance, :map, allow_nil?: false),
         arg(:supersedes_event_id, :uuid, allow_nil?: true),
+        arg(:process_ref, :string, allow_nil?: true),
         arg(:delivery_key, :string, allow_nil?: true),
         arg(:data, :map, allow_nil?: true, default: %{}),
         arg(:subject_resource, :atom, allow_nil?: true)

@@ -51,6 +51,9 @@ defmodule AshDiscreteBusinessEvents.LedgerRowContractTest do
         "reconstructable from the row alone",
     supersedes_event_id:
       "corrections — nullable; corrections are NEW events, the original is never rewritten (chain integrity)",
+    process_ref:
+      "process — nullable; the BPMN-side correlation pointer for process-relevant events " <>
+        "(§5.2), set by the mapping's process_key or the caller; opaque to this package",
     delivery_key:
       "delivery — unique; webhook retries idempotent at the delivery level, below source idempotency",
     region: "region — first-class; drives admission, chains, sequences, cursors (§6)",
@@ -97,6 +100,7 @@ defmodule AshDiscreteBusinessEvents.LedgerRowContractTest do
       source_record_id: "01984f7a-6d1e-7332-9c4f-2b1e0a9d5e01"
     },
     supersedes_event_id: nil,
+    process_ref: "bpmn:fulfillment:inst-42",
     delivery_key: "bulk20:0Af5f00000ABcDEAG:opportunity:000123",
     region: :us,
     residency_tag: "us"
@@ -128,6 +132,8 @@ defmodule AshDiscreteBusinessEvents.LedgerRowContractTest do
   }
 
   describe "the §1.4 column set" do
+    # Amended in BIZEV-13: :process_ref — design §5.2 (the BPMN trigger
+    # bridge reserves the process correlation slot on the ledger row).
     test "the frozen columns are exactly the design's table" do
       assert Map.keys(columns()) |> Enum.sort() == [
                :actor_display,
@@ -139,6 +145,7 @@ defmodule AshDiscreteBusinessEvents.LedgerRowContractTest do
                :event_kind,
                :observed_at,
                :occurred_at,
+               :process_ref,
                :provenance,
                :region,
                :residency_tag,
