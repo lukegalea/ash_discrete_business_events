@@ -61,7 +61,20 @@ defmodule AshDiscreteBusinessEvents.MixProject do
       # transformer orders itself after its transformers). A real
       # dependency, so a host compiles ash_events before this package —
       # the ash_events fork (temporal as-of support, upstream #104).
-      {:ash_events, github: "lukegalea/ash_events", branch: "temporal-as-of-support-0.7"},
+      # (override: true — the temporal-as-of fork stands in for hex's
+      # ash_events ~> 0.6, which the projector engine declares).
+      {:ash_events,
+       github: "lukegalea/ash_events", branch: "temporal-as-of-support-0.7", override: true},
+
+      # The projector engine (BIZEV-8 landed the integration): the package
+      # compiles against the Projector DSL and ProjectionResource extension,
+      # and reuses the engine's Checkpoint/DeadLetter — a real dependency,
+      # exactly as ash_events was promoted when the ledger landed. The
+      # package ships its OWN region-scoped drain (`Projections.Drain`),
+      # because the engine's Server scans the log by global id (a silent
+      # cross-region merge, §6) and selects the origin's columns; see the
+      # Projections moduledoc for the ruling.
+      {:ash_events_projections, github: "lukegalea/ash_events_projections"},
 
       # The lineage contract (BIZEV-6 landed it): `Lineage` and the job
       # templates compile against AshOpenLineage's public API (`emit/2`,

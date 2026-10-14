@@ -4,29 +4,15 @@
 
 import Config
 
-# The suite talks to a real PostgreSQL through the sandboxed test repo
-# (see test/support/test_repo.ex and test/test_helper.exs). `SKIP_DB=1`
-# excludes the `:db`-tagged tests for runs without a database.
-if System.get_env("SKIP_DB") do
-  config :ash_discrete_business_events, :db_tests_enabled?, false
-else
-  config :ash_discrete_business_events, :db_tests_enabled?, true
-end
-
-# The suite's own database, created and migrated by the test helper on
-# the fly — a fresh clone needs no setup task. The devenv's Postgres
-# exports PGHOST/PGPORT and DB_USER/DB_PASSWORD (the family env pattern,
-# so the devenv-wrapped invocation works unchanged).
-config :ash_discrete_business_events, AshDiscreteBusinessEvents.Test.Repo,
-  database: "ash_discrete_business_events_test#{System.get_env("MIX_TEST_PARTITION")}",
-  pool: Ecto.Adapters.SQL.Sandbox,
-  pool_size: 10,
-  queue_target: 1000
-
-# Ash loads relationships in spawned Tasks by default; those processes do
-# not own the sandbox connection and hit DBConnection.OwnershipError
-# intermittently. The standard fix, and what `mix igniter.install
-# ash_postgres` writes.
-config :ash, disable_async?: true
-
-config :logger, level: :warning
+# The projector engine's compile-time surface for THIS repo's own suite.
+# The engine's internal resources (Checkpoint, DeadLetter, Registry) resolve
+# their repo and table prefix via Application.compile_env, so this must be
+# set before the dependency compiles. A HOST sets its own values — a lib
+# package's config/ is never loaded by consumers; this file binds only this
+# repo's builds. Projectors are not started here: the suite drives the
+# package's region-scoped drain explicitly.
+config :ash_events_projections,
+  repo: AshDiscreteBusinessEvents.Test.Repo,
+  table_prefix: "bizev_projection_",
+  start_projectors?: false,
+  start_probe?: false
