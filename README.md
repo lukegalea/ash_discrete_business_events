@@ -460,6 +460,59 @@ A nested run (depth > 0 per the correlation provider) whose parent id
 resolves emits the `parent` run facet; omitted, never fabricated,
 otherwise.
 
+## Projections (BIZEV-8)
+
+The ledger IS an AshEvents log, so the projector engine drains business
+events **unchanged**: `project "opportunity.stage_changed", fn event ->
+ops end` — the event kind rides the log's `action`, the subject's
+external id rides `record_id`, and the handler sees the full §1.4 row
+(region, occurred_at, supersedes_event_id, provenance, sequence, data).
+
+```elixir
+defmodule MyApp.Projections.PipelineHistoryProjector do
+  use AshDiscreteBusinessEvents.Projections,
+    name: "pipeline_history_v1",
+    event_log: MyApp.Platform.Ledger,
+    projection_resource: MyApp.Projections.PipelineHistory
+
+  grain fn event -> %{region: event.region, subject: event.record_id} end
+
+  project "opportunity.stage_changed", fn event ->
+    [{:set, :stage, event.data["to_stage"]}]
+  end
+end
+
+# drain one region's commit-order feed (idempotent — the checkpoint is
+# the cursor; call it from the sync job template):
+MyApp.Projections.PipelineHistoryProjector.drain(:us)
+```
+
+The projection target is an ordinary `AshEvents.Projections.ProjectionResource`
+(`grain_fields`, the ops vocabulary: `{:set, :stage, v}`, `{:increment,
+:corrections, n}`, …). **Declare `temporal` on it and the projector's
+writes become periods** (§4: canonical projections ARE temporal,
+host-side): the drain writes `as_of event.occurred_at` — the source's
+truth time — so a late arrival reopens history at the instant the truth
+changed, and a correction (an event with `supersedes_event_id`) restates
+without rewriting. "Pipeline value of account X at T" is then
+`Ash.Query.as_of/2` on the projection.
+
+**Why the package owns the drain** (and the engine's Server does not run
+over the ledger): the engine scans the log by GLOBAL id — a silent
+cross-region merge (§6) — and selects the origin's columns the ledger
+does not carry. `AshDiscreteBusinessEvents.Projections.Drain` drains the
+per-region commit-order `feed` (sequence order is commit order per
+region), reusing the engine's Projector DSL, ProjectionResource actions,
+`Checkpoint` (keyed per projector AND region) and `DeadLetter` verbatim.
+
+**The replay-equivalence gate (the S1-67-family unknown, now closed
+positive):** a ledger-driven lifecycle — multiple subjects, stage
+progressions, a late arrival, a supersession — drained live, then wiped
+and re-drained from scratch, yields **byte-identical periods** (bounds,
+content and counters; the write's wall clock differs by design, the
+periods do not). Determinism is a property of the engine + feed order,
+pinned by test; as-of consumers may rely on rebuilt projections.
+
 ## Review discipline
 
 `docs/REVIEW.md` is the checklist every change to this package is reviewed

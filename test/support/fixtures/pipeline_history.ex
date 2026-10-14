@@ -28,7 +28,7 @@ defmodule AshDiscreteBusinessEvents.Fixtures.PipelineHistory do
   end
 
   projection_resource do
-    grain_fields [:region, :subject]
+    grain_fields([:region, :subject])
   end
 
   attributes do
@@ -77,5 +77,14 @@ defmodule AshDiscreteBusinessEvents.Fixtures.PipelineHistory do
   postgres do
     table "pipeline_histories"
     repo AshDiscreteBusinessEvents.Test.Repo
+  end
+
+  actions do
+    # The as-of surface: strategy :context makes plain reads the CURRENT
+    # version of every grain; `Ash.Query.as_of/2` pins any instant —
+    # "pipeline value of account X at T".
+    read :read do
+      primary? true
+    end
   end
 end

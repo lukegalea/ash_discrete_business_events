@@ -31,8 +31,8 @@ defmodule AshDiscreteBusinessEvents.Projections.Drain do
   """
 
   alias AshEvents.Projections.Checkpoint
-  alias AshEvents.Projections.DeadLetter
   alias AshEvents.Projections.Config
+  alias AshEvents.Projections.DeadLetter
 
   require Ash.Expr
 
@@ -98,22 +98,29 @@ defmodule AshDiscreteBusinessEvents.Projections.Drain do
     resource = projector.__projection_resource__()
 
     with grain_key when not is_nil(grain_key) <- projector.__grain__().(event) do
-      if projector.needs_current_state?(event) do
-        row = get_or_upsert_grain(resource, grain_key, event)
+      apply_grain_ops(projector, event, resource, grain_key)
+    end
+  end
 
-        case projector.handle_event(event, row) do
-          {:ok, ops} when ops != [] -> apply_ops!(resource, row, ops, event)
-          _ -> :ok
-        end
-      else
-        case projector.handle_event(event) do
-          {:ok, ops} when ops != [] ->
-            row = get_or_upsert_grain(resource, grain_key, event)
-            apply_ops!(resource, row, ops, event)
+  # Stateful (arity-2): the grain row loads FIRST — the handler sees the
+  # row as the previous event left it. Stateless: the handler decides
+  # before any DB hit.
+  defp apply_grain_ops(projector, event, resource, grain_key) do
+    if projector.needs_current_state?(event) do
+      row = get_or_upsert_grain(resource, grain_key, event)
 
-          _ ->
-            :ok
-        end
+      case projector.handle_event(event, row) do
+        {:ok, ops} when ops != [] -> apply_ops!(resource, row, ops, event)
+        _ -> :ok
+      end
+    else
+      case projector.handle_event(event) do
+        {:ok, ops} when ops != [] ->
+          row = get_or_upsert_grain(resource, grain_key, event)
+          apply_ops!(resource, row, ops, event)
+
+        _ ->
+          :ok
       end
     end
   end

@@ -24,15 +24,26 @@ defmodule AshDiscreteBusinessEvents.Fixtures.PipelineProjector do
     event_log: AshDiscreteBusinessEvents.Fixtures.Ledger,
     projection_resource: AshDiscreteBusinessEvents.Fixtures.PipelineHistory
 
-  grain fn event -> %{region: event.region, subject: event.record_id} end
+  grain(fn event -> %{region: event.region, subject: event.record_id} end)
 
-  project "opportunity.stage_changed", fn event ->
+  project("opportunity.stage_changed", fn event ->
+    # The handler validates its input shape: a kind it routes but cannot
+    # digest FAILS LOUDLY (and the drain quarantines it in the DeadLetter)
+    # instead of folding garbage into the projection.
+    stage = event.data["to_stage"]
+
+    unless is_binary(stage) do
+      raise ArgumentError,
+            "undigestible #{inspect(event.action)}: data[\"to_stage\"] is not a string " <>
+              "(subject #{inspect(event.record_id)})"
+    end
+
     [
-      {:set, :stage, event.data["to_stage"]},
+      {:set, :stage, stage},
       {:set, :amount, event.data["amount"]},
       {:increment, :corrections, supersession_count(event)}
     ]
-  end
+  end)
 
   defp supersession_count(%{supersedes_event_id: nil}), do: 0
   defp supersession_count(%{supersedes_event_id: id}) when not is_nil(id), do: 1
