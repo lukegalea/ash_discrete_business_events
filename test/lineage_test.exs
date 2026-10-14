@@ -31,7 +31,9 @@ defmodule AshDiscreteBusinessEvents.LineageTest do
 
   describe "the structural naming vocabulary" do
     test "every row of the design's table, exact" do
-      assert Lineage.sync_job_name(:salesforce, :opportunity) == "bizev.sync.salesforce.opportunity"
+      assert Lineage.sync_job_name(:salesforce, :opportunity) ==
+               "bizev.sync.salesforce.opportunity"
+
       assert Lineage.webhook_job_name(:stripe) == "bizev.webhook.stripe"
       assert Lineage.replay_job_name(:pipeline_history) == "bizev.replay.pipeline_history"
       assert Lineage.raw_dataset(:salesforce, :opportunity) == "bizev.raw.salesforce.opportunity"
@@ -133,9 +135,17 @@ defmodule AshDiscreteBusinessEvents.LineageTest do
         mapping_versions: ["bizev.rules.opportunity_stage_changed.v7fefb25c"]
       }
 
-      other_range = %{base | ledger_range: %{region: :us, after_sequence: 100, through_sequence: 300}}
+      other_range = %{
+        base
+        | ledger_range: %{region: :us, after_sequence: 100, through_sequence: 300}
+      }
+
       other_purpose = %{base | purpose: :remap_backfill}
-      other_versions = %{base | mapping_versions: ["bizev.rules.opportunity_stage_changed.vaaaaaaa1"]}
+
+      other_versions = %{
+        base
+        | mapping_versions: ["bizev.rules.opportunity_stage_changed.vaaaaaaa1"]
+      }
 
       assert Lineage.run_id(base) != Lineage.run_id(other_range)
       assert Lineage.run_id(base) != Lineage.run_id(other_purpose)
@@ -177,7 +187,10 @@ defmodule AshDiscreteBusinessEvents.LineageTest do
       for event <- InMemory.events() do
         assert event["run"]["runId"] == run_id
         assert event["job"]["name"] == "bizev.sync.salesforce.opportunity"
-        assert event["outputs"] == [%{"namespace" => "bizev", "name" => "bizev.raw.salesforce.opportunity"}]
+
+        assert event["outputs"] == [
+                 %{"namespace" => "bizev", "name" => "bizev.raw.salesforce.opportunity"}
+               ]
       end
     end
 
@@ -210,8 +223,8 @@ defmodule AshDiscreteBusinessEvents.LineageTest do
     test "a throw emits FAIL and re-throws; an exit emits FAIL and re-exits" do
       job = Lineage.job(:sync, source: :salesforce, stream: :opportunity)
 
-      assert catch_throw(Lineage.run(job, "run-1", fn -> throw :halted end)) == :halted
-      assert catch_exit(Lineage.run(job, "run-2", fn -> exit :shutdown end)) == :shutdown
+      assert catch_throw(Lineage.run(job, "run-1", fn -> throw(:halted) end)) == :halted
+      assert catch_exit(Lineage.run(job, "run-2", fn -> exit(:shutdown) end)) == :shutdown
 
       fails = Enum.filter(InMemory.events(), &(&1["eventType"] == "FAIL"))
       assert length(fails) == 2
@@ -346,7 +359,10 @@ defmodule AshDiscreteBusinessEvents.LineageTest do
       Correlation.script("corr-1", 0)
       Correlation.script_parent("enclosing-run")
 
-      Lineage.emit_complete(Lineage.job(:sync, source: :salesforce, stream: :opportunity), "run-d0")
+      Lineage.emit_complete(
+        Lineage.job(:sync, source: :salesforce, stream: :opportunity),
+        "run-d0"
+      )
 
       [event] = InMemory.events()
       refute Map.has_key?(event["run"]["facets"], "parent")
@@ -357,7 +373,10 @@ defmodule AshDiscreteBusinessEvents.LineageTest do
       Correlation.script("corr-2", 1)
       Correlation.script_parent("enclosing-run-7")
 
-      Lineage.emit_complete(Lineage.job(:sync, source: :salesforce, stream: :opportunity), "run-d1")
+      Lineage.emit_complete(
+        Lineage.job(:sync, source: :salesforce, stream: :opportunity),
+        "run-d1"
+      )
 
       [event] = InMemory.events()
       assert event["run"]["facets"]["parent"]["run"]["runId"] == "enclosing-run-7"
@@ -368,7 +387,10 @@ defmodule AshDiscreteBusinessEvents.LineageTest do
       Correlation.script("corr-3", 2)
       Correlation.script_parent(nil)
 
-      Lineage.emit_complete(Lineage.job(:sync, source: :salesforce, stream: :opportunity), "run-d2")
+      Lineage.emit_complete(
+        Lineage.job(:sync, source: :salesforce, stream: :opportunity),
+        "run-d2"
+      )
 
       [event] = InMemory.events()
       refute Map.has_key?(event["run"]["facets"], "parent")
@@ -390,7 +412,10 @@ defmodule AshDiscreteBusinessEvents.LineageTest do
       end)
 
       [complete] =
-        Enum.filter(InMemory.events(), &(&1["eventType"] == "COMPLETE" and &1["run"]["runId"] == "run-nested"))
+        Enum.filter(
+          InMemory.events(),
+          &(&1["eventType"] == "COMPLETE" and &1["run"]["runId"] == "run-nested")
+        )
 
       assert complete["run"]["facets"]["parent"]["run"]["runId"] == "fresh-parent"
     end
@@ -432,10 +457,9 @@ defmodule AshDiscreteBusinessEvents.LineageTest do
       "Acme Corp & Sons",
       "StageName = 'Closed Won'"
     ]
-
 end
 
-  defmodule AshDiscreteBusinessEvents.RunContextTestHost do
+defmodule AshDiscreteBusinessEvents.RunContextTestHost do
   @moduledoc """
   The host-side scope establisher's test double — `Correlation.with_
   correlation/2`'s exact shape: `(correlation_id, fun)` running `fun` in the

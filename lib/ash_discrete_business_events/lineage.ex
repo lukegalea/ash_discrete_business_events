@@ -179,14 +179,14 @@ defmodule AshDiscreteBusinessEvents.Lineage do
 
     inputs =
       [] ++
-        (case Keyword.fetch(opts, :region) do
-           {:ok, region} -> [ledger_dataset(region)]
-           :error -> []
-         end) ++
-        (case Keyword.fetch(opts, :mapping_versions) do
-           {:ok, versions} -> Enum.map(versions, &rules_dataset_entry/1)
-           :error -> []
-         end)
+        case Keyword.fetch(opts, :region) do
+          {:ok, region} -> [ledger_dataset(region)]
+          :error -> []
+        end ++
+        case Keyword.fetch(opts, :mapping_versions) do
+          {:ok, versions} -> Enum.map(versions, &rules_dataset_entry/1)
+          :error -> []
+        end
 
     outputs =
       case Keyword.fetch(opts, :output) do
@@ -255,9 +255,12 @@ defmodule AshDiscreteBusinessEvents.Lineage do
   values) plus the sanctioned emission options `:parent_run_id`, `:root`,
   `:correlation_id`, `:correlation_depth`, `:event_time`, `:producer`.
   """
-  @spec run(%{required(:namespace) => String.t(), required(:name) => String.t()}, String.t(), (
-          -> result
-        )) :: result when result: var
+  @spec run(
+          %{required(:namespace) => String.t(), required(:name) => String.t()},
+          String.t(),
+          (-> result)
+        ) :: result
+        when result: var
   def run(job, run_id, fun) when is_map(job) and is_binary(run_id) and is_function(fun, 0) do
     emit_start(job, run_id)
 
@@ -272,7 +275,7 @@ defmodule AshDiscreteBusinessEvents.Lineage do
     catch
       :throw, value ->
         emit_fail(job, run_id, {:job_failed, :throw, value})
-        throw value
+        throw(value)
 
       :exit, value ->
         emit_fail(job, run_id, {:job_failed, :exit, value})

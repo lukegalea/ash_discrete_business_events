@@ -7,8 +7,18 @@
 # degrades to structural constants when its Agent isn't started, so tests
 # that never script it stay deterministic too).
 Application.put_env(:ash_open_lineage, :transport, AshOpenLineage.Transport.InMemory)
-Application.put_env(:ash_open_lineage, :correlation_provider, AshDiscreteBusinessEvents.Fixtures.Correlation)
-Application.put_env(:ash_open_lineage, :parent_id_provider, AshDiscreteBusinessEvents.Fixtures.Correlation)
+
+Application.put_env(
+  :ash_open_lineage,
+  :correlation_provider,
+  AshDiscreteBusinessEvents.Fixtures.Correlation
+)
+
+Application.put_env(
+  :ash_open_lineage,
+  :parent_id_provider,
+  AshDiscreteBusinessEvents.Fixtures.Correlation
+)
 
 # The fixture host and the macro-generated resources are the package
 # under test; make sure everything is loaded before any test runs.

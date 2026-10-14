@@ -20,7 +20,11 @@ defmodule AshDiscreteBusinessEvents.Fixtures.Correlation do
   @fallback_id "bizev-test-correlation"
   @fallback_parent nil
 
-  def start_link(_arg), do: Agent.start_link(fn -> %{id: @fallback_id, depth: 0, parent: @fallback_parent} end, name: __MODULE__)
+  def start_link(_arg),
+    do:
+      Agent.start_link(fn -> %{id: @fallback_id, depth: 0, parent: @fallback_parent} end,
+        name: __MODULE__
+      )
 
   @doc "Scripts the correlation id and depth."
   def script(id, depth), do: Agent.update(__MODULE__, &%{&1 | id: id, depth: depth})

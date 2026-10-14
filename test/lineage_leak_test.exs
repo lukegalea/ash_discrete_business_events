@@ -62,7 +62,11 @@ defmodule AshDiscreteBusinessEvents.LineageLeakTest do
     # …and on a boundary value pretending to be a count.
     assert_raise ExUnit.AssertionError, fn ->
       assert_clean!(
-        %{"outputs" => [%{"facets" => %{"bizevStats" => %{"lastSystemModstamp" => "2026-10-01T#{@customer}"}}}]},
+        %{
+          "outputs" => [
+            %{"facets" => %{"bizevStats" => %{"lastSystemModstamp" => "2026-10-01T#{@customer}"}}}
+          ]
+        },
         forbidden()
       )
     end
@@ -147,6 +151,7 @@ defmodule AshDiscreteBusinessEvents.LineageLeakTest do
       )
 
     Lineage.emit_start(job, run_id, correlation_id: "corr-4d11a77e", correlation_depth: 0)
+
     Lineage.emit_complete(job, run_id,
       correlation_id: "corr-4d11a77e",
       counts: %{"bizev.projection.pipeline_history" => 4200}
@@ -190,7 +195,10 @@ defmodule AshDiscreteBusinessEvents.LineageLeakTest do
     # The job and dataset names — the structural vocabulary — are untouched
     # by whatever the scope held:
     assert event["job"]["name"] == "bizev.sync.salesforce.opportunity"
-    assert Enum.all?(event["inputs"] ++ event["outputs"], fn ds -> ds["name"] == "bizev.raw.salesforce.opportunity" end)
+
+    assert Enum.all?(event["inputs"] ++ event["outputs"], fn ds ->
+             ds["name"] == "bizev.raw.salesforce.opportunity"
+           end)
   end
 
   defp forbidden, do: [@actor, @actor_email, @tenant, @customer, @filter_value]
