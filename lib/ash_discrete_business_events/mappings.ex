@@ -69,13 +69,16 @@ defmodule AshDiscreteBusinessEvents.Mappings do
           _ ->
             [source_name, stream_name] = artifact["source"]
 
+            # The STORED artifact is the hash's input, verbatim — the
+            # invariant version_hash == Compiler.hash(artifact) is what
+            # replay-proof and provenance joins stand on.
             mapping_version_resource
             |> Ash.Changeset.for_create(:draft, %{
               mapping_name: artifact["mapping_name"],
               version_hash: hash,
               source_name: String.to_existing_atom(source_name),
               stream_name: String.to_existing_atom(stream_name),
-              artifact: Map.put(artifact, "version_hash", hash)
+              artifact: artifact
             })
             |> Ash.create()
         end
@@ -96,7 +99,8 @@ defmodule AshDiscreteBusinessEvents.Mappings do
 
   @doc "Marks a validated version active, superseding the name's previous active."
   @spec activate!(Ash.Resource.record()) :: Ash.Resource.record()
-  def activate!(%{status: :validated} = version), do: Ash.update!(version, %{status: :active}, action: :activate)
+
+  def activate!(%{status: :validated} = version), do: Ash.update!(version, %{}, action: :activate)
 
   def activate!(version) do
     raise ArgumentError,

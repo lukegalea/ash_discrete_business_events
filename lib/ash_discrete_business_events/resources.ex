@@ -578,6 +578,12 @@ defmodule AshDiscreteBusinessEvents.Resources do
 
         update :validate do
           description "Re-runs the compiler's structural checks over the STORED artifact; a draft that lost nothing becomes :validated."
+
+          # The stored-artifact check is opaque Elixir over a map attribute —
+          # not expressible as a database expression, so the action cannot
+          # be atomic.
+          require_atomic? false
+
           accept []
           validate attribute_equals(:status, :draft)
           change {AshDiscreteBusinessEvents.MappingVersion.Changes.ValidateStoredArtifact, []}
@@ -591,6 +597,10 @@ defmodule AshDiscreteBusinessEvents.Resources do
           move, history is never rewritten). The ledger's provenance joins
           mapping_name + mapping_version_hash to THIS row.
           """
+
+          # The pointer move reads and demotes OTHER rows (the name's
+          # previous active) inside the action's transaction.
+          require_atomic? false
 
           accept []
           validate attribute_equals(:status, :validated)
@@ -612,6 +622,8 @@ defmodule AshDiscreteBusinessEvents.Resources do
       end
 
       code_interface do
+        define :by_id, action: :read, get_by: [:id]
+
         define :by_name_and_hash,
           action: :by_name_and_hash,
           args: [:mapping_name, :version_hash],

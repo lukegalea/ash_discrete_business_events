@@ -9,11 +9,12 @@ defmodule AshDiscreteBusinessEvents.Transformers.HashMappings do
   `AshDiscreteBusinessEvents.Info.mapping/2` hands back the exact
   pointer the ledger's provenance carries.
 
-  The hash is over the mapping CONTENT (the canonical artifact: name,
-  source, operators in declaration order — `Mappings.Compiler`), not
-  its identity: renaming a rule is not changing it, and changing it must
-  never look like a rename. Declaration order is part of the hash —
-  ora-3 §13.3, pinned by test.
+  The hash is over the mapping CONTENT — the canonical artifact: name,
+  source, and the operators in declaration order (`Mappings.Compiler`).
+  The name is part of it on purpose: the mapping name IS the event kind
+  the rule emits, so a rename is a semantic change and must mint a new
+  version, never masquerade as the same rule. Declaration order is part
+  of the hash too — ora-3 §13.3, pinned by test.
   """
 
   use Spark.Dsl.Transformer
@@ -22,17 +23,20 @@ defmodule AshDiscreteBusinessEvents.Transformers.HashMappings do
 
   @impl true
   def transform(dsl) do
-    dsl
-    |> AshDiscreteBusinessEvents.Info.mappings()
-    |> Enum.reduce(dsl, fn mapping, dsl ->
-      {artifact, hash} = Compiler.compile(mapping)
+    dsl_state =
+      dsl
+      |> AshDiscreteBusinessEvents.Info.mappings()
+      |> Enum.reduce(dsl, fn mapping, dsl ->
+        {artifact, hash} = Compiler.compile(mapping)
 
-      Spark.Dsl.Transformer.replace_entity(
-        dsl,
-        [:business_events],
-        %{mapping | hash: hash, artifact: artifact},
-        &(&1.name == mapping.name)
-      )
-    end)
+        Spark.Dsl.Transformer.replace_entity(
+          dsl,
+          [:business_events],
+          %{mapping | hash: hash, artifact: artifact},
+          &(&1.name == mapping.name)
+        )
+      end)
+
+    {:ok, dsl_state}
   end
 end

@@ -46,13 +46,27 @@ defmodule AshDiscreteBusinessEvents.Mappings.Compiler do
     %{"op" => Atom.to_string(op.op), "target" => Atom.to_string(op.target)}
     |> put_value("from", op.from)
     |> put_value("type", op.type && Atom.to_string(op.type))
-    |> put_value("cases", op.cases)
+    |> put_value("cases", canonical_cases(op))
     |> put_value("default", op.default)
     |> put_value("separator", op.separator)
     |> put_value("value", op.value)
     |> put_value("reason", op.reason)
     |> Map.reject(fn {_key, value} -> is_nil(value) end)
   end
+
+  # Decode case keys are canonicalized through their JSON encoding AT
+  # COMPILE TIME: JSON object keys are always strings, so a case declared
+  # as `%{1 => "early"}` must not behave differently after the artifact's
+  # database round-trip (where `1` arrives back as `"1"`). Canonicalizing
+  # here — once, deterministically — keeps in-memory artifacts and stored
+  # artifacts applying identically, which is what rule-version-pinned
+  # replay requires. Apply-time lookups encode the SOURCE value the same
+  # way (`json_key/1`), so `"1"` and 1 hit the same case.
+  defp canonical_cases(%{op: :decode, cases: cases}) when is_map(cases) do
+    Map.new(cases, fn {key, value} -> {json_key(key), value} end)
+  end
+
+  defp canonical_cases(_op), do: nil
 
   @doc """
   The content hash of an artifact — the first #{@hash_bytes} hex chars of
@@ -134,16 +148,19 @@ defmodule AshDiscreteBusinessEvents.Mappings.Compiler do
             "`occurred_at` and a datetime type)"
         ]
 
-      not (extraction["type"] && Atom.to_string(extraction["type"]) in datetime_strings()) ->
+      valid_occurred_at_type?(extraction["type"]) ->
+        []
+
+      true ->
         [
           "occurred_at extraction must have a datetime type " <>
             "(#{Enum.join(datetime_strings(), ", ")}); got #{inspect(extraction["type"])}"
         ]
-
-      true ->
-        []
     end
   end
+
+  defp valid_occurred_at_type?(type) when is_binary(type), do: type in datetime_strings()
+  defp valid_occurred_at_type?(_), do: false
 
   defp datetime_strings, do: Enum.map(@datetime_types, &Atom.to_string/1)
 
@@ -199,7 +216,7 @@ defmodule AshDiscreteBusinessEvents.Mappings.Compiler do
   artifact may name one; the option wins), `:payload` passthrough for
   classifiers is the payload itself.
   """
-  @spec apply(map(), map(), keyword()) ::
+  @spec run(map(), map(), keyword()) ::
           {:ok, map()} | {:ok, :skipped, String.t()} | {:error, term()}
   def run(artifact, payload, opts \\ [])
 
@@ -260,7 +277,7 @@ defmodule AshDiscreteBusinessEvents.Mappings.Compiler do
            occurred_at: occurred_at,
            provenance: %{
              "mapping_name" => artifact["mapping_name"],
-             "mapping_version_hash" => artifact["version_hash"] || hash(artifact),
+             "mapping_version_hash" => hash(artifact),
              "source_record_id" => nil
            },
            unmapped: unmapped
@@ -276,7 +293,9 @@ defmodule AshDiscreteBusinessEvents.Mappings.Compiler do
 
   defp eval_op(op, payload) do
     case op["op"] do
-      "map" -> write(op, fetch_path(payload, op["from"]), &cast(&1, type(op)))
+      # fetch_path yields the raw value (or nil); wrap it in the {:ok, _}
+      # form write/3 casts from.
+      "map" -> write(op, {:ok, fetch_path(payload, op["from"])}, &cast(&1, type(op)))
       "decode" -> decode(op, payload)
       "coalesce" -> coalesce(op, payload)
       "concat" -> concat(op, payload)
@@ -355,8 +374,10 @@ defmodule AshDiscreteBusinessEvents.Mappings.Compiler do
     end)
   end
 
-  # Decode case keys are JSON terms; lookups canonicalize through the
-  # JSON round-trip so `"1"` and 1 hit the same case.
+  # Apply-time lookup canonicalizes the SOURCE value through its JSON
+  # encoding — the same transform the case keys went through at compile
+  # time (see `canonical_cases/1`), so lookups are exact JSON-term
+  # matches and stored artifacts behave like in-memory ones.
   defp json_key(value) do
     case Jason.encode(value) do
       {:ok, encoded} -> encoded

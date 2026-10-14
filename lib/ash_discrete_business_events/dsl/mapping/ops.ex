@@ -159,10 +159,10 @@ defmodule AshDiscreteBusinessEvents.Dsl.Mapping.Ops do
       describe: """
       Declares that a target key is deliberately NOT mapped, and why.
       Refusal-by-name: the gap is authored data, carried on the artifact,
-      surfaced by `apply/3` — never a silent absence.
+      surfaced by `run/3` — never a silent absence.
       """,
       examples: [
-        ~s(unmapped_because :owner_email, "PII — kept out of canonical events (§9.5)")
+        ~s(unmapped_because :owner_email, "PII — kept out of canonical events, §9.5")
       ],
       target: Op,
       args: [:target, :reason],

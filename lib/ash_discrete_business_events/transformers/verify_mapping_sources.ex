@@ -18,8 +18,6 @@ defmodule AshDiscreteBusinessEvents.Transformers.VerifyMappingSources do
 
   @impl true
   def transform(dsl) do
-    sources = Info.sources(dsl)
-
     dsl
     |> Info.mappings()
     |> Enum.reduce_while({:ok, dsl}, fn mapping, {:ok, dsl} ->

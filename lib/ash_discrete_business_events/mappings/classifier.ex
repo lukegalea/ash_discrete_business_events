@@ -8,7 +8,7 @@ defmodule AshDiscreteBusinessEvents.Mappings.Classifier do
   kind* — routing, thresholds — is not the mapping operators' job
   (they shape the event), and it is not THIS package's job (a
   DMN/ash_decisions evaluation is host wiring). It is a behaviour the
-  mapping declaration may name (`classify_with`) and `apply/3` honours.
+  mapping declaration may name (`classify_with`) and `run/3` honours.
 
   A pure decision over (artifact, payload, canonical-so-far):
 
