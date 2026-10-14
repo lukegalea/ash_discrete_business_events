@@ -104,14 +104,12 @@ defmodule AshDiscreteBusinessEvents.Adapters.SalesforceBulk20 do
     base = String.trim(stream.select || "")
 
     base =
-      cond do
-        cursor == nil or cursor == %{} ->
-          base
-
-        true ->
-          field = @cursor_field
-          value = Map.get(cursor, field)
-          "#{base} WHERE #{field} > #{soql_literal(value)}"
+      if cursor == nil or cursor == %{} do
+        base
+      else
+        field = @cursor_field
+        value = Map.get(cursor, field)
+        "#{base} WHERE #{field} > #{soql_literal(value)}"
       end
 
     base = "#{base} ORDER BY #{@cursor_field}"

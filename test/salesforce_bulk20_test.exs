@@ -65,7 +65,7 @@ defmodule AshDiscreteBusinessEvents.SalesforceBulk20Test do
           business_events do
             source :broken do
               adapter(Broken)
-              region :us
+              region(:us)
             end
           end
         end
@@ -80,7 +80,7 @@ defmodule AshDiscreteBusinessEvents.SalesforceBulk20Test do
           business_events do
             source :ghost do
               adapter(Nowhere.DefinitelyNotAModule)
-              region :us
+              region(:us)
             end
           end
         end
@@ -97,7 +97,7 @@ defmodule AshDiscreteBusinessEvents.SalesforceBulk20Test do
               adapter(AshDiscreteBusinessEvents.Fixtures.StubAdapter)
               auth(:nango, provider: "salesforce")
               auth(:basic, provider: "salesforce-sandbox")
-              region :us
+              region(:us)
             end
           end
         end
@@ -116,23 +116,27 @@ defmodule AshDiscreteBusinessEvents.SalesforceBulk20Test do
 
   describe "the fixture corpus, land → map → ledger → projection" do
     test "the full import produces real periods, real ledger rows with provenance" do
-      assert {:ok, summary} = FixtureCorpus.import(
-               host: CorpusHost,
-               source: :salesforce,
-               stream: :opportunity,
-               source_record: AshDiscreteBusinessEvents.Fixtures.SourceRecord,
-               ledger: Ledger,
-               mapping_name: :opportunity_stage_changed,
-               mapping_version_resource: MappingVersion
-             )
+      assert {:ok, summary} =
+               FixtureCorpus.import(
+                 host: CorpusHost,
+                 source: :salesforce,
+                 stream: :opportunity,
+                 source_record: AshDiscreteBusinessEvents.Fixtures.SourceRecord,
+                 ledger: Ledger,
+                 mapping_name: :opportunity_stage_changed,
+                 mapping_version_resource: MappingVersion
+               )
 
       assert summary.runs == 9
       assert summary.landed > 100
       assert summary.ledger_events > 100
       assert summary.version_hash =~ ~r/^[0-9a-f]{8}$/
 
-      # Every landed row is a REAL period (the corpus's first sight of
-      # each subject and each content change opens one; re-sights no-op).
+      # Every landed row is a REAL period: first sights and content
+      # changes open one each; identical re-sights are temporal no-ops.
+      # The late arrival's SPLIT keeps the superseded February period row
+      # (history is never overwritten) — it was already counted when it
+      # landed, so rows == landed exactly.
       %{rows: [[raw_rows]]} =
         Repo.query!("SELECT count(*) FROM source_records WHERE region = 'us'")
 
@@ -148,7 +152,7 @@ defmodule AshDiscreteBusinessEvents.SalesforceBulk20Test do
         assert event.provenance["mapping_name"] == "opportunity_stage_changed"
         assert event.provenance["mapping_version_hash"] == summary.version_hash
         assert event.provenance["source_record_id"]
-        assert event.occurred_at.year in 2026
+        assert event.occurred_at.year == 2026
       end
     end
 
@@ -191,9 +195,14 @@ defmodule AshDiscreteBusinessEvents.SalesforceBulk20Test do
         |> Ash.Query.filter(subject == ^sample.subject and region == :us)
         |> Ash.read!(authorize?: false)
 
-      assert current.stage in ["Prospecting", "Qualification", "Proposal", "Negotiation",
-                 "Closed Won", "Closed Lost"
-               ]
+      assert current.stage in [
+               "Prospecting",
+               "Qualification",
+               "Proposal",
+               "Negotiation",
+               "Closed Won",
+               "Closed Lost"
+             ]
 
       # …and at the January instant: only January's truth exists (some
       # subjects are created later in the corpus and read as empty).
@@ -250,9 +259,9 @@ defmodule AshDiscreteBusinessEvents.SalesforceBulk20Test do
           mapping :opportunity_stage_changed do
             source {:salesforce, :opportunity}
 
-            map :stage, from: "StageName", type: :string
-            map :amount, from: "Amount", type: :integer
-            map :occurred_at, from: "SystemModstamp", type: :utc_datetime_usec
+            map(:stage, from: "StageName", type: :string)
+            map(:amount, from: "Amount", type: :integer)
+            map(:occurred_at, from: "SystemModstamp", type: :utc_datetime_usec)
           end
         end
       end
@@ -317,5 +326,4 @@ defmodule AshDiscreteBusinessEvents.SalesforceBulk20Test do
       mapping_version_resource: MappingVersion
     )
   end
-
 end

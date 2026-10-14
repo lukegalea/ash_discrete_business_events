@@ -15,12 +15,12 @@ defmodule AshDiscreteBusinessEvents.Fixtures.CorpusProjector do
     event_log: AshDiscreteBusinessEvents.Fixtures.Ledger,
     projection_resource: AshDiscreteBusinessEvents.Fixtures.PipelineHistory
 
-  grain fn event -> %{region: event.region, subject: event.record_id} end
+  grain(fn event -> %{region: event.region, subject: event.record_id} end)
 
-  project "opportunity_stage_changed", fn event ->
+  project("opportunity_stage_changed", fn event ->
     [
       {:set, :stage, event.data["stage"]},
       {:set, :amount, event.data["amount"]}
     ]
-  end
+  end)
 end

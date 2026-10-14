@@ -76,9 +76,14 @@ defmodule AshDiscreteBusinessEvents.Adapters.SalesforceBulk20.ReqTransport do
     rows =
       Enum.flat_map(urls, fn url ->
         case req(:get, url, token, opts: opts) do
-          {:ok, %{status: 200, body: csv}} -> parse_csv(csv)
-          {:ok, %{status: status, body: body}} -> throw({:error, {:download_failed, status, body}})
-          {:error, reason} -> throw({:error, reason})
+          {:ok, %{status: 200, body: csv}} ->
+            parse_csv(csv)
+
+          {:ok, %{status: status, body: body}} ->
+            throw({:error, {:download_failed, status, body}})
+
+          {:error, reason} ->
+            throw({:error, reason})
         end
       end)
 

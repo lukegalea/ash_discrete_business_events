@@ -128,22 +128,32 @@ defmodule AshDiscreteBusinessEvents.Adapters.SalesforceBulk20.FixtureCorpus do
     runs = manifest()["runs"]
     Auth.reset()
 
-    # The corrections fold starts from HISTORY: every subject's last
-    # ledgered event's data, so a re-import folds identical canonical
-    # facts away against what the ledger already holds (§7). Raw SQL —
-    # only (record_id, data) are needed, and the ledger row's machinery
+    # The corrections fold starts from HISTORY: every subject's ledgered
+    # TRUTH-POINTS (occurred_at → data), so a re-import folds identical
+    # canonical facts away against what the ledger already holds — a
+    # replay of the same snapshots records nothing (§7). Raw SQL — only
+    # (record_id, epoch, data) are needed, and the ledger row's machinery
     # columns (the replay-routing atom) are not this fold's business.
     repo = AshPostgres.DataLayer.Info.repo(ledger)
     table = AshPostgres.DataLayer.Info.table(ledger)
 
     %{rows: rows} =
-      repo.query!("SELECT record_id, data FROM #{table} WHERE region = $1 ORDER BY sequence", [
-        to_string(source.region)
-      ])
+      repo.query!(
+        "SELECT record_id, extract(epoch from occurred_at)::bigint, data " <>
+          "FROM #{table} WHERE region = $1",
+        [to_string(source.region)]
+      )
 
-    last_data = Map.new(rows, fn [record_id, data] -> {record_id, %{data: data}} end)
+    last_data =
+      Enum.reduce(rows, %{}, fn [record_id, epoch, data], acc ->
+        acc
+        |> Map.put_new(record_id, %{})
+        |> put_in([record_id, Integer.to_string(epoch)], data)
+      end)
 
-    Enum.reduce_while(runs, {:ok, %{landed: 0, ledger_events: 0, cursor: nil, last_data: last_data}},
+    Enum.reduce_while(
+      runs,
+      {:ok, %{landed: 0, ledger_events: 0, cursor: nil, last_data: last_data}},
       fn run, {:ok, acc} ->
         Auth.advance()
 
@@ -204,39 +214,52 @@ defmodule AshDiscreteBusinessEvents.Adapters.SalesforceBulk20.FixtureCorpus do
     Enum.reduce(records, acc, fn record, acc ->
       external_id = record["Id"]
 
-      case Mappings.run(artifact, record, source_record_id: external_id) do
-        {:ok, canonical} ->
-          last = acc.last_data[external_id]
-
-          cond do
-            is_nil(last) or last.data != canonical.data ->
-              ledger.record!(%{
-                event_kind: canonical.event_kind,
-                region: source.region,
-                residency_tag: to_string(source.region),
-                subject_type: "crm.opportunity",
-                subject_external_id: external_id,
-                subject_stream: stream.name,
-                actor_type: "crm.system",
-                occurred_at: canonical.occurred_at,
-                provenance: canonical.provenance,
-                data: canonical.data
-              })
-
-              %{
-                acc
-                | ledger_events: acc.ledger_events + 1,
-                  last_data: Map.put(acc.last_data, external_id, canonical)
-              }
-
-            true ->
-              acc
-          end
-
-        _ ->
-          acc
+      with {:ok, canonical} <- Mappings.run(artifact, record, source_record_id: external_id),
+           false <- already_ledgered?(acc, external_id, canonical) do
+        record_transition(ledger, source, stream, external_id, canonical)
+        bump(acc, external_id, canonical)
+      else
+        _ -> acc
       end
     end)
+  end
+
+  # The truth-point check: this subject's ledgered state AT this instant.
+  # Known with the same data → already recorded (a replay folds away);
+  # unseen or different → a new event (§7: corrections are events; the
+  # original is never rewritten).
+  defp already_ledgered?(acc, external_id, canonical) do
+    point = Integer.to_string(DateTime.to_unix(canonical.occurred_at))
+    known = acc.last_data[external_id] || %{}
+    known[point] == canonical.data
+  end
+
+  defp record_transition(ledger, source, stream, external_id, canonical) do
+    ledger.record!(%{
+      event_kind: canonical.event_kind,
+      region: source.region,
+      residency_tag: to_string(source.region),
+      subject_type: "crm.opportunity",
+      subject_external_id: external_id,
+      subject_stream: stream.name,
+      actor_type: "crm.system",
+      occurred_at: canonical.occurred_at,
+      provenance: canonical.provenance,
+      data: canonical.data
+    })
+  end
+
+  defp bump(acc, external_id, canonical) do
+    point = Integer.to_string(DateTime.to_unix(canonical.occurred_at))
+
+    %{
+      acc
+      | ledger_events: acc.ledger_events + 1,
+        last_data:
+          Map.update(acc.last_data, external_id, %{point => canonical.data}, fn points ->
+            Map.put(points, point, canonical.data)
+          end)
+    }
   end
 
   # Minimal CSV (same simplification as the Req transport): plain
@@ -271,9 +294,12 @@ defmodule AshDiscreteBusinessEvents.Adapters.SalesforceBulk20.FixtureCorpus do
   defmodule Transport do
     @moduledoc """
     The corpus's Bulk 2.0 transport double: each `create_query_job`/
-    `download_results` exchange serves the CURRENT run's CSV (set by
-    `Auth.advance/0`), rows filtered by the job's `SystemModstamp`
-    condition exactly as the server-side query would.
+    `download_results` exchange serves the CURRENT run's CSV verbatim —
+    the CAPTURED download, exactly as the sync received it (the file is
+    the recording, not a re-execution of the query). Rows the source
+    delivered late (a SystemModstamp older than the cursor) are IN the
+    recording, which is precisely the §7 shape the corpus exists to
+    exercise.
     """
     @behaviour AshDiscreteBusinessEvents.Adapters.SalesforceBulk20.Transport
 
@@ -288,30 +314,12 @@ defmodule AshDiscreteBusinessEvents.Adapters.SalesforceBulk20.FixtureCorpus do
     def job_state(_conn, _job, _opts), do: {:ok, :completed}
 
     @impl true
-    def download_results(_conn, %{soql: soql, run: run_index}, _opts) do
+    def download_results(_conn, %{run: run_index}, _opts) do
       runs = FixtureCorpus.manifest()["runs"]
-      run = Enum.at(runs, run_index - 1)
 
-      rows =
-        if run do
-          cursor = cursor_from_soql(soql)
-          records = FixtureCorpus.read_run(run["file"])
-
-          case cursor do
-            nil -> records
-            value -> Enum.filter(records, &(&1["SystemModstamp"] > value))
-          end
-        else
-          []
-        end
-
-      {:ok, %{records: rows, pk_chunked?: false}}
-    end
-
-    defp cursor_from_soql(soql) do
-      case Regex.run(~r/SystemModstamp > '([^']+)'/, soql) do
-        [_, value] -> value
-        _ -> nil
+      case Enum.at(runs, run_index - 1) do
+        nil -> {:ok, %{records: [], pk_chunked?: false}}
+        run -> {:ok, %{records: FixtureCorpus.read_run(run["file"]), pk_chunked?: false}}
       end
     end
   end

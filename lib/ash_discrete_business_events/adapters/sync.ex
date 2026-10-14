@@ -52,8 +52,13 @@ defmodule AshDiscreteBusinessEvents.Adapters.Sync do
   @default_max_batches 100
 
   @spec run(keyword()) ::
-          {:ok, %{landed: non_neg_integer(), batches: pos_integer(), cursor: map(),
-                  api_calls_used: non_neg_integer()}}
+          {:ok,
+           %{
+             landed: non_neg_integer(),
+             batches: pos_integer(),
+             cursor: map(),
+             api_calls_used: non_neg_integer()
+           }}
           | {:error, term()}
   def run(opts) do
     source = Keyword.fetch!(opts, :source)
@@ -101,10 +106,17 @@ defmodule AshDiscreteBusinessEvents.Adapters.Sync do
 
   defp resolve_conn(opts, source) do
     case Keyword.get(opts, :auth_provider) || AuthProvider.resolve(source) do
-      {:ok, conn} -> {:ok, conn}
-      {:error, :no_auth_provider} -> raise "no auth provider configured (config :ash_discrete_business_events, :auth_provider) — a source that cannot authenticate is a failed sync, never an anonymous one"
-      {:error, reason} -> raise "auth edge failed: #{inspect(reason)}"
-      provider when is_atom(provider) -> provider.resolve(source)
+      {:ok, conn} ->
+        {:ok, conn}
+
+      {:error, :no_auth_provider} ->
+        raise "no auth provider configured (config :ash_discrete_business_events, :auth_provider) — a source that cannot authenticate is a failed sync, never an anonymous one"
+
+      {:error, reason} ->
+        raise "auth edge failed: #{inspect(reason)}"
+
+      provider when is_atom(provider) ->
+        provider.resolve(source)
     end
   end
 
@@ -129,7 +141,8 @@ defmodule AshDiscreteBusinessEvents.Adapters.Sync do
       cursor: cursor,
       landed: 0,
       batches: 0,
-      api_calls_used: 0
+      api_calls_used: 0,
+      run_started_at: DateTime.utc_now()
     }
 
     run_batches(state, max_batches)
@@ -146,7 +159,13 @@ defmodule AshDiscreteBusinessEvents.Adapters.Sync do
       [limit: state.limit, api_calls_used: state.api_calls_used, transport: state.transport]
       |> Enum.reject(fn {_k, v} -> is_nil(v) end)
 
-    case state.adapter.fetch_batch(state.source, state.stream, state.conn, state.cursor, batch_opts) do
+    case state.adapter.fetch_batch(
+           state.source,
+           state.stream,
+           state.conn,
+           state.cursor,
+           batch_opts
+         ) do
       {:ok, batch} ->
         state = %{state | api_calls_used: batch.api_calls_used || state.api_calls_used}
         landed = land_records(state, batch.records)
@@ -198,8 +217,13 @@ defmodule AshDiscreteBusinessEvents.Adapters.Sync do
           source_metadata: %{"adapter" => inspect(state.adapter)}
         })
 
-      landed.valid_at.lower != nil and
-        DateTime.compare(landed.valid_at.lower, state.fetched_at) == :eq
+      # A NEW period carries the WRITE's recorded_at (the temporal
+      # machinery stamps it on create and on split); an identical
+      # re-observation returns the EXISTING period — a temporal no-op —
+      # whose recorded_at predates this run. (The period row's id is NOT
+      # the signal: a transition's new version reuses the identity's row
+      # id, and the split-off history re-inserts with it.)
+      DateTime.compare(landed.recorded_at, state.run_started_at) != :lt
     end)
   end
 

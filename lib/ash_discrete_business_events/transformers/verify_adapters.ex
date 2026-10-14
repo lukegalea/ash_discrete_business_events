@@ -56,9 +56,16 @@ defmodule AshDiscreteBusinessEvents.Transformers.VerifyAdapters do
   # and the ambiguity is a compile error.
   defp auth_problems(source) do
     case source.auth do
-      [_single] -> []
-      [] -> []
-      auths -> ["declares #{length(auths)} auth strategies — a source has exactly ONE auth edge (ADR 0011); keep one `auth` declaration"]
+      [_single] ->
+        []
+
+      [] ->
+        []
+
+      auths ->
+        [
+          "declares #{length(auths)} auth strategies — a source has exactly ONE auth edge (ADR 0011); keep one `auth` declaration"
+        ]
     end
   end
 
@@ -72,7 +79,8 @@ defmodule AshDiscreteBusinessEvents.Transformers.VerifyAdapters do
   defp conformance_problems(_source, adapter) do
     case Code.ensure_compiled(adapter) do
       {:module, ^adapter} ->
-        missing = Enum.reject(@callbacks, fn {name, arity} -> function_exported?(adapter, name, arity) end)
+        missing =
+          Enum.reject(@callbacks, fn {name, arity} -> function_exported?(adapter, name, arity) end)
 
         case missing do
           [] ->

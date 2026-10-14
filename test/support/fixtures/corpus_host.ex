@@ -32,13 +32,13 @@ defmodule AshDiscreteBusinessEvents.Fixtures.CorpusHost do
     mapping :opportunity_stage_changed do
       source {:salesforce, :opportunity}
 
-      map :stage, from: "StageName", type: :string
-      map :amount, from: "Amount", type: :integer
-      map :occurred_at, from: "SystemModstamp", type: :utc_datetime_usec
+      map(:stage, from: "StageName", type: :string)
+      map(:amount, from: "Amount", type: :integer)
+      map(:occurred_at, from: "SystemModstamp", type: :utc_datetime_usec)
 
-      constant :source_system, value: "salesforce"
+      constant(:source_system, value: "salesforce")
 
-      unmapped_because :close_date, "forecast metadata — not a canonical fact for this kind"
+      unmapped_because(:close_date, "forecast metadata — not a canonical fact for this kind")
     end
   end
 end
