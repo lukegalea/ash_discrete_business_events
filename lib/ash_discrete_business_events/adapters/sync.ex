@@ -186,7 +186,7 @@ defmodule AshDiscreteBusinessEvents.Adapters.Sync do
 
     Enum.count(records, fn record ->
       landed =
-        state.source_record.land!(
+        state.source_record.land!(%{
           source: state.source.name,
           stream: state.stream.name,
           external_id: external_id(state, record),
@@ -194,10 +194,12 @@ defmodule AshDiscreteBusinessEvents.Adapters.Sync do
           residency_tag: state.residency_tag,
           raw_payload: record,
           cursor: %{cursor_key => Map.get(record, adapter_field)},
-          fetched_at: state.fetched_at
-        )
+          fetched_at: state.fetched_at,
+          source_metadata: %{"adapter" => inspect(state.adapter)}
+        })
 
-      landed.valid_at.lower == state.fetched_at
+      landed.valid_at.lower != nil and
+        DateTime.compare(landed.valid_at.lower, state.fetched_at) == :eq
     end)
   end
 

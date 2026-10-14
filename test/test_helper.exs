@@ -26,6 +26,8 @@ Application.put_env(
   AshDiscreteBusinessEvents.Fixtures,
   AshDiscreteBusinessEvents.Fixtures.StubAdapter,
   AshDiscreteBusinessEvents.Fixtures.Correlation,
+  AshDiscreteBusinessEvents.Fixtures.CorpusHost,
+  AshDiscreteBusinessEvents.Fixtures.CorpusProjector,
   AshDiscreteBusinessEvents.Fixtures.Host,
   AshDiscreteBusinessEvents.Fixtures.Domain,
   AshDiscreteBusinessEvents.Fixtures.SourceRecord,

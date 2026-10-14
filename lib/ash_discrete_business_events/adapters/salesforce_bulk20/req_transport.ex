@@ -51,7 +51,7 @@ defmodule AshDiscreteBusinessEvents.Adapters.SalesforceBulk20.ReqTransport do
            req(:get, "#{url}/services/data/#{@api_version}/jobs/query/#{job_id}/results", token,
              opts: opts
            ),
-         result_urls = result_urls(body, url, token, opts),
+         result_urls = result_urls(body, url, opts),
          {:ok, rows} <- fetch_all(result_urls, token, opts) do
       {:ok, %{records: rows, pk_chunked?: pk_chunked?(body)}}
     end
@@ -59,13 +59,13 @@ defmodule AshDiscreteBusinessEvents.Adapters.SalesforceBulk20.ReqTransport do
 
   # Single-chunk jobs return a bare SObject array; PK-chunked jobs return
   # a list of locator URLs.
-  defp result_urls(body, url, token, opts) when is_list(body) and body != [] do
+  defp result_urls(body, url, opts) when is_list(body) and body != [] do
     Enum.map(body, fn %{"url" => suffix} ->
       "#{url}#{suffix}#{locator_opts(suffix, opts)}"
     end)
   end
 
-  defp result_urls(_body, url, token, opts) do
+  defp result_urls(_body, url, opts) do
     ["#{url}/services/data/#{@api_version}/jobs/query/results#{locator_opts("", opts)}"]
   end
 

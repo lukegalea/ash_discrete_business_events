@@ -41,7 +41,6 @@ defmodule AshDiscreteBusinessEvents.Adapters.SalesforceBulk20 do
   @behaviour AshDiscreteBusinessEvents.Adapters.Adapter
 
   alias AshDiscreteBusinessEvents.Adapters.BudgetExhausted
-  alias AshDiscreteBusinessEvents.Adapters.SalesforceBulk20.Transport
 
   @cursor_field "SystemModstamp"
   @calls_per_batch 3
