@@ -98,22 +98,30 @@ defmodule AshDiscreteBusinessEvents.DslTest do
   end
 
   describe "mapping declaration forms" do
-    test "the blockless keyword form declares source" do
-      defmodule Host.KeywordMapping do
-        use AshDiscreteBusinessEvents, domains: [AshDiscreteBusinessEvents.Fixtures.Domain]
+    test "a blockless keyword mapping is refused — no body, no occurred_at (BIZEV-5)" do
+      # Pre-BIZEV-5 this form compiled (the body was deliberately empty —
+      # the operator vocabulary landed here). With the vocabulary live, a
+      # mapping without a body cannot extract the source's truth time, and
+      # the compiler refuses it. (The keyword form cannot carry a body at
+      # all — see the grammar test below — so the valid surface is the
+      # block form, as on the fixture Host.)
+      error =
+        assert_raise Spark.Error.DslError, fn ->
+          defmodule Host.BlocklessKeyword do
+            use AshDiscreteBusinessEvents, domains: [AshDiscreteBusinessEvents.Fixtures.Domain]
 
-        business_events do
-          source :salesforce do
-            region(:us)
-            stream(:opportunity)
+            business_events do
+              source :salesforce do
+                region(:us)
+                stream(:opportunity)
+              end
+
+              mapping(:opportunity_stage_changed, source: {:salesforce, :opportunity})
+            end
           end
-
-          mapping(:opportunity_stage_changed, source: {:salesforce, :opportunity})
         end
-      end
 
-      mapping = Info.mapping(Host.KeywordMapping, :opportunity_stage_changed)
-      assert Info.mapping_source(mapping) == {:salesforce, :opportunity}
+      assert error.message =~ "no occurred_at extraction"
     end
 
     test "a keyword option before a do-block is unrepresentable (Elixir grammar)" do
