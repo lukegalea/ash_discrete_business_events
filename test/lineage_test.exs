@@ -10,7 +10,7 @@ defmodule AshDiscreteBusinessEvents.LineageTest do
   granularity, and the RunContext fan-out threading.
   """
 
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   import AshDiscreteBusinessEvents.TestSupport.LeakCheck, only: [assert_clean!: 2]
 

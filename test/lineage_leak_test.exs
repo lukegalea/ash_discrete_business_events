@@ -19,7 +19,7 @@ defmodule AshDiscreteBusinessEvents.LineageLeakTest do
   that line as facets grow.
   """
 
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   import AshDiscreteBusinessEvents.TestSupport.LeakCheck, only: [assert_clean!: 2]
 
