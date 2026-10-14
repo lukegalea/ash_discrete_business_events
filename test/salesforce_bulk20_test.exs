@@ -45,6 +45,8 @@ defmodule AshDiscreteBusinessEvents.SalesforceBulk20Test do
     AshOpenLineage.Transport.InMemory.clear()
     start_supervised!(FixtureCorpus.Auth)
     FixtureCorpus.Auth.reset()
+    start_supervised!(FixtureCorpus.Revisions)
+    FixtureCorpus.Revisions.clear()
 
     :ok
   end

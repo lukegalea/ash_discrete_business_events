@@ -52,6 +52,7 @@ defmodule AshDiscreteBusinessEvents.Adapters.SalesforceBulk20.FixtureCorpus do
 
   alias AshDiscreteBusinessEvents.Adapters.Sync
   alias AshDiscreteBusinessEvents.Info
+  alias AshDiscreteBusinessEvents.Ledger.Corrections
   alias AshDiscreteBusinessEvents.Mappings
   alias AshDiscreteBusinessEvents.Mappings.Compiler
 
@@ -134,27 +135,18 @@ defmodule AshDiscreteBusinessEvents.Adapters.SalesforceBulk20.FixtureCorpus do
     # replay of the same snapshots records nothing (§7). Raw SQL — only
     # (record_id, epoch, data) are needed, and the ledger row's machinery
     # columns (the replay-routing atom) are not this fold's business.
-    repo = AshPostgres.DataLayer.Info.repo(ledger)
-    table = AshPostgres.DataLayer.Info.table(ledger)
+    # The corrections fold starts from HISTORY: the truth-point register
+    # (§7 — see Ledger.Corrections) — so a replay folds identical facts
+    # away, and a DIFFERENT fact at a known truth-point derives a
+    # superseding event (corrections are events; originals are never
+    # rewritten).
+    register = Corrections.seed(ledger, source.region)
 
-    %{rows: rows} =
-      repo.query!(
-        "SELECT record_id, extract(epoch from occurred_at)::bigint, data " <>
-          "FROM #{table} WHERE region = $1",
-        [to_string(source.region)]
-      )
-
-    last_data =
-      Enum.reduce(rows, %{}, fn [record_id, epoch, data], acc ->
-        acc
-        |> Map.put_new(record_id, %{})
-        |> put_in([record_id, Integer.to_string(epoch)], data)
-      end)
-
-    Enum.reduce_while(
-      runs,
-      {:ok, %{landed: 0, ledger_events: 0, cursor: nil, last_data: last_data}},
-      fn run, {:ok, acc} ->
+    runs
+    |> Enum.with_index(1)
+    |> Enum.reduce_while(
+      {:ok, %{landed: 0, ledger_events: 0, corrections: 0, cursor: nil, register: register}},
+      fn {run, run_index}, {:ok, acc} ->
         Auth.advance()
 
         case Sync.run(
@@ -174,7 +166,7 @@ defmodule AshDiscreteBusinessEvents.Adapters.SalesforceBulk20.FixtureCorpus do
                 cursor: sync.cursor || acc.cursor
             }
 
-            acc = ledger_fold(artifact, source, stream, source_record, ledger, run, acc)
+            acc = ledger_fold(artifact, source, stream, ledger, run, run_index, acc)
             {:cont, {:ok, acc}}
 
           {:error, reason} ->
@@ -189,6 +181,7 @@ defmodule AshDiscreteBusinessEvents.Adapters.SalesforceBulk20.FixtureCorpus do
            runs: length(runs),
            landed: acc.landed,
            ledger_events: acc.ledger_events,
+           corrections: acc.corrections,
            cursor: acc.cursor,
            version_hash: validated.version_hash
          }}
@@ -198,6 +191,20 @@ defmodule AshDiscreteBusinessEvents.Adapters.SalesforceBulk20.FixtureCorpus do
     end
   end
 
+  @doc """
+  Arms a revision from `run_file` onward: `rows` (Bulk 2.0 row maps,
+  merged by `Id`) replace the served snapshot's rows for that run AND
+  every later run — a restated truth propagates forward (§7). The
+  corrections demo arms `corrections/revision-2026-06.csv`'s rows.
+  """
+  def arm_revision!(run_file, rows) do
+    index =
+      Enum.find_index(manifest()["runs"], &(&1["file"] == run_file))
+
+    __MODULE__.Revisions.arm!(index + 1, rows)
+    :ok
+  end
+
   defp run_fetched_at(run) do
     case DateTime.from_iso8601(run["fetched_at"]) do
       {:ok, dt, _} -> dt
@@ -205,36 +212,62 @@ defmodule AshDiscreteBusinessEvents.Adapters.SalesforceBulk20.FixtureCorpus do
     end
   end
 
-  # The mapping fold (§7's corrections rule): map the landed record; a
-  # record whose canonical facts equal the subject's last ledgered event
-  # is folded away — only genuine truth transitions become ledger rows.
-  defp ledger_fold(artifact, source, stream, _source_record, ledger, run, acc) do
-    records = read_run(run["file"])
+  # The mapping fold (§7's corrections rule): map the SAME rows the sync
+  # served (revisions merged), classify each against the truth-point
+  # register, and record new facts + superseding corrections — only
+  # genuine truth transitions become ledger rows.
+  defp ledger_fold(artifact, source, stream, ledger, run, run_index, acc) do
+    records =
+      run["file"]
+      |> read_run()
+      |> __MODULE__.Revisions.apply(run_index)
 
     Enum.reduce(records, acc, fn record, acc ->
       external_id = record["Id"]
 
-      with {:ok, canonical} <- Mappings.run(artifact, record, source_record_id: external_id),
-           false <- already_ledgered?(acc, external_id, canonical) do
-        record_transition(ledger, source, stream, external_id, canonical)
-        bump(acc, external_id, canonical)
+      with {:ok, canonical} <-
+             Mappings.run(artifact, record, source_record_id: external_id),
+           outcome <-
+             Corrections.classify(
+               acc.register,
+               external_id,
+               canonical.occurred_at,
+               canonical.data
+             ),
+           false <- outcome == :duplicate do
+        fold_transition(acc, ledger, source, stream, external_id, canonical, outcome)
       else
         _ -> acc
       end
     end)
   end
 
-  # The truth-point check: this subject's ledgered state AT this instant.
-  # Known with the same data → already recorded (a replay folds away);
-  # unseen or different → a new event (§7: corrections are events; the
-  # original is never rewritten).
-  defp already_ledgered?(acc, external_id, canonical) do
-    point = Integer.to_string(DateTime.to_unix(canonical.occurred_at))
-    known = acc.last_data[external_id] || %{}
-    known[point] == canonical.data
+  defp fold_transition(acc, ledger, source, stream, external_id, canonical, outcome) do
+    supersedes = supersedes_event_id(outcome)
+
+    recorded = record_transition(ledger, source, stream, external_id, canonical, supersedes)
+
+    acc
+    |> Map.update!(:ledger_events, &(&1 + 1))
+    |> Map.update!(:corrections, fn c -> c + correction_count(outcome) end)
+    |> Map.put(:register, register_after(acc.register, external_id, canonical, recorded))
   end
 
-  defp record_transition(ledger, source, stream, external_id, canonical) do
+  defp register_after(register, external_id, canonical, recorded) do
+    subject_points = Map.get(register.points, external_id, %{})
+    point = Corrections.point_key(canonical.occurred_at)
+
+    updated = Map.put(subject_points, point, %{data: canonical.data, event_id: recorded.id})
+    %{register | points: Map.put(register.points, external_id, updated)}
+  end
+
+  defp supersedes_event_id({:correction, %{event_id: id}}), do: id
+  defp supersedes_event_id(_), do: nil
+
+  defp correction_count({:correction, _}), do: 1
+  defp correction_count(_), do: 0
+
+  defp record_transition(ledger, source, stream, external_id, canonical, supersedes) do
     ledger.record!(%{
       event_kind: canonical.event_kind,
       region: source.region,
@@ -245,21 +278,9 @@ defmodule AshDiscreteBusinessEvents.Adapters.SalesforceBulk20.FixtureCorpus do
       actor_type: "crm.system",
       occurred_at: canonical.occurred_at,
       provenance: canonical.provenance,
+      supersedes_event_id: supersedes,
       data: canonical.data
     })
-  end
-
-  defp bump(acc, external_id, canonical) do
-    point = Integer.to_string(DateTime.to_unix(canonical.occurred_at))
-
-    %{
-      acc
-      | ledger_events: acc.ledger_events + 1,
-        last_data:
-          Map.update(acc.last_data, external_id, %{point => canonical.data}, fn points ->
-            Map.put(points, point, canonical.data)
-          end)
-    }
   end
 
   # Minimal CSV (same simplification as the Req transport): plain
@@ -291,6 +312,59 @@ defmodule AshDiscreteBusinessEvents.Adapters.SalesforceBulk20.FixtureCorpus do
     def resolve(_source), do: {:ok, %{corpus: true}}
   end
 
+  defmodule Revisions do
+    @moduledoc """
+    Armed source revisions — the corrections demo's "the source rewrote
+    history" (§7). A revision armed at run N merges its rows (keyed by
+    `Id`) over THAT run's served snapshot AND EVERY LATER run: a
+    restated truth propagates forward exactly as a rewritten source's
+    snapshots would. `clear/0` disarms.
+    """
+    use Agent
+
+    def start_link(_), do: Agent.start_link(fn -> nil end, name: __MODULE__)
+
+    @doc "Arms `rows` from run index `from_run_index` onward (merged by Id)."
+    def arm!(from_run_index, rows) do
+      Agent.update(__MODULE__, fn _ -> %{from: from_run_index, rows: List.wrap(rows)} end)
+    end
+
+    @doc "Merges the armed revision rows over `records` when `run_index` is at/after the arm point. Not started → no revisions (never a raise)."
+    def apply(records, run_index) do
+      case Process.whereis(__MODULE__) do
+        nil ->
+          records
+
+        _agent ->
+          do_apply(records, run_index)
+      end
+    end
+
+    defp do_apply(records, run_index) do
+      case Agent.get(__MODULE__, & &1) do
+        %{from: from, rows: rows} when run_index >= from ->
+          merge_by_id(records, rows)
+
+        _ ->
+          records
+      end
+    end
+
+    defp merge_by_id(records, rows) do
+      by_id = Map.new(rows, &{&1["Id"], &1})
+
+      Enum.map(records, fn row ->
+        case by_id[row["Id"]] do
+          nil -> row
+          revision -> Map.merge(row, revision)
+        end
+      end)
+    end
+
+    @doc "Disarms every revision."
+    def clear, do: Agent.update(__MODULE__, fn _ -> nil end)
+  end
+
   defmodule Transport do
     @moduledoc """
     The corpus's Bulk 2.0 transport double: each `create_query_job`/
@@ -318,8 +392,16 @@ defmodule AshDiscreteBusinessEvents.Adapters.SalesforceBulk20.FixtureCorpus do
       runs = FixtureCorpus.manifest()["runs"]
 
       case Enum.at(runs, run_index - 1) do
-        nil -> {:ok, %{records: [], pk_chunked?: false}}
-        run -> {:ok, %{records: FixtureCorpus.read_run(run["file"]), pk_chunked?: false}}
+        nil ->
+          {:ok, %{records: [], pk_chunked?: false}}
+
+        run ->
+          rows =
+            run["file"]
+            |> FixtureCorpus.read_run()
+            |> FixtureCorpus.Revisions.apply(run_index)
+
+          {:ok, %{records: rows, pk_chunked?: false}}
       end
     end
   end
