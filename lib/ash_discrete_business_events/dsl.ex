@@ -231,6 +231,15 @@ defmodule AshDiscreteBusinessEvents.Dsl do
             "behaviour is the host's wiring; the package ships the seam and a behaviour, " <>
             "never the dependency. It may emit, override the event kind, or skip with a " <>
             "reason."
+      ],
+      process_key: [
+        type: :string,
+        doc:
+          "Optional: the payload path whose value is the process correlation key (§5.2) — " <>
+            "the BPMN-side pointer carried on the ledger row's `process_ref` for events " <>
+            "that are process-relevant (opportunity closed → fulfillment process). The " <>
+            "value lands as data on the canonical output (`:process_ref`); this package " <>
+            "never opens it."
       ]
     ]
   }

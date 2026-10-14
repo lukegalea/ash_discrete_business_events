@@ -577,7 +577,66 @@ exactly one new period and exactly one superseding event per restated
 truth point. Re-sync can never duplicate (delivery + source idempotency)
 and never silently revises (corrections are visible events).
 
-## Simulations — SIM-NAMESPACE-ISOLATION CLOSED (BIZEV-10)
+## The BPMN trigger bridge (BIZEV-13, §5.2)
+
+ADR 0030's EventSource adapter pattern, with the audit trigger's division
+of labor — **nudge on append + sweep for completeness**:
+
+- **Nudge on append, best-effort**: after a fresh ledger append commits,
+  the configured handler's `nudge/1` receives the full ledger row (the
+  event kind, subject/correlation keys, `process_ref`, provenance,
+  data). A failure is logged and swallowed — the record stands, the
+  sweep recovers. Simulated rows never nudge (the twin stays out of the
+  real machinery); delivery-collapsed retries don't re-nudge.
+- **Sweep for completeness**: `Triggers.sweep/3` walks the region's
+  commit-order feed from the handler's dispatch cursor (an engine
+  checkpoint, keyed `triggers:<handler>.<region>`), nudging every event
+  and advancing per event. At-least-once: a failed nudge stops the
+  sweep at that event — the cursor stands, the next sweep retries.
+  Handlers must be idempotent on the BPMN side (dispatch correlates by
+  subject/process_ref).
+
+**No ash_bpmn dependency**: hosts wire the adapter —
+
+```elixir
+config :ash_discrete_business_events, :trigger_handler, MyApp.Bpmn.EventSource
+
+defmodule MyApp.Bpmn.EventSource do
+  @behaviour AshDiscreteBusinessEvents.Triggers.Handler
+  def nudge(event), do: MyApp.Bpmn.Runtime.dispatch(event.event_kind, event)
+end
+
+# the completeness sweep (the host's periodic job):
+AshDiscreteBusinessEvents.Triggers.sweep(MyApp.Platform.Ledger, :us)
+```
+
+**Process context as data (§5.2's slots)**: the ledger row carries an
+optional `process_ref` — the BPMN-side correlation pointer for
+process-relevant events — set by the mapping's `process_key` (a payload
+path; the value lands on the canonical output as `:process_ref` and on
+the ledger row) or by the caller. Process context beyond the pointer
+lands in the row's existing `context` map, as data.
+
+## The honest demo path (§8)
+
+The demo discipline, stated as a rule: **internal event history and
+external event history are DIFFERENT sources, labeled as such, and never
+merged silently.**
+
+- clinic-demo's revenue/forecast expression reads **internal
+  appointment history** — an internal event source, already
+  ash_events-logged. That is not BIZEV data and demos must say so.
+- BIZEV's external history is the **Salesforce fixture corpus** — every
+  external row in a demo traversed the full land → map → ledger path
+  (real SourceRecord periods, real ledger rows with provenance). No
+  demo ever shows external events that did not traverse the ledger.
+- Any surface listing both must label the source (internal vs external
+  via the ledger, simulated vs real via BIZEV-10's
+  `simulation_runs/1`/twin-shape contract).
+
+Production Salesforce connects only after the fixture path is boring.
+
+## Projections (BIZEV-8)
 
 The simulation twin is **one macro, two modules, two tables**: declaring
 `{:ledger, opts}` emits the real ledger AND its `SimulationEvent` twin

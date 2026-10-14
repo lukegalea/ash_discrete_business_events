@@ -40,6 +40,7 @@ defmodule AshDiscreteBusinessEvents.Mappings.Compiler do
       "ops" => Enum.map(mapping.ops, &op_canonical/1)
     }
     |> put_value("classify_with", mapping.classify_with && Atom.to_string(mapping.classify_with))
+    |> put_value("process_key", mapping.process_key)
   end
 
   defp op_canonical(op) do
@@ -225,6 +226,7 @@ defmodule AshDiscreteBusinessEvents.Mappings.Compiler do
     with :ok <- verify(artifact),
          {:ok, fields} <- run_ops(artifact, payload),
          {:ok, canonical} <- occurred_at_from(fields, artifact) do
+      canonical = process_ref(canonical, artifact, payload)
       classify(artifact, payload, canonical, opts)
     end
   end
@@ -395,6 +397,23 @@ defmodule AshDiscreteBusinessEvents.Mappings.Compiler do
   end
 
   # ── the classifier seam ────────────────────────────────────────────────
+
+  # The mapping's process_key names a payload path whose value is the
+  # process correlation key (§5.2) — carried on the canonical output as
+  # :process_ref, for the ledger's process_ref slot. Absent mapping key,
+  # or absent payload value → absent from the output.
+  defp process_ref(canonical, artifact, payload) do
+    case artifact["process_key"] do
+      nil ->
+        canonical
+
+      path ->
+        case fetch_path(payload, path) do
+          nil -> canonical
+          value -> Map.put(canonical, :process_ref, to_string(value))
+        end
+    end
+  end
 
   defp classify(artifact, payload, canonical, opts) do
     classifier =

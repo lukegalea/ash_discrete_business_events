@@ -31,7 +31,7 @@ defmodule AshDiscreteBusinessEvents.Ledger.Record do
 
   @appended ~w(region residency_tag subject_type subject_external_id subject_stream
                actor_type actor_external_id actor_display occurred_at observed_at context
-               provenance supersedes_event_id delivery_key data)a
+               provenance supersedes_event_id process_ref delivery_key data)a
 
   require Ash.Query
 
@@ -49,6 +49,16 @@ defmodule AshDiscreteBusinessEvents.Ledger.Record do
 
       _ ->
         append(resource, args, opts)
+        |> case do
+          {:ok, record} = ok ->
+            # The BPMN trigger bridge (§5.2): nudge on append — best-effort,
+            # after the fact; the sweep makes dispatch complete.
+            AshDiscreteBusinessEvents.Triggers.after_append(record)
+            ok
+
+          other ->
+            other
+        end
     end
   end
 
