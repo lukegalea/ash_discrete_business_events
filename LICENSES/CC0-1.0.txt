@@ -1,0 +1,119 @@
+Creative Commons CC0 1.0 Universal
+
+CREATIVE COMMONS CORPORATION IS NOT A LAW FIRM AND DOES NOT PROVIDE LEGAL
+SERVICES. DISTRIBUTION OF THIS DOCUMENT DOES NOT CREATE AN ATTORNEY-CLIENT
+RELATIONSHIP. CREATIVE COMMONS PROVIDES THIS INFORMATION ON AN "AS-IS" BASIS.
+CREATIVE COMMONS MAKES NO WARRANTIES REGARDING THE USE OF THIS DOCUMENT OR THE
+INFORMATION OR WORKS PROVIDED HEREUNDER, AND DISCLAIMS LIABILITY FOR DAMAGES
+RESULTING FROM THE USE OF THIS DOCUMENT OR THE INFORMATION OR WORKS PROVIDED
+HEREUNDER.
+
+Statement of Purpose
+
+The laws of most jurisdictions throughout the world automatically confer
+exclusive Copyright and Related Rights (defined below) upon the creator and
+subsequent owner(s) (each and all, "rightsholders") of certain original works
+of authorship ("Works").
+
+Certain rightsholders, namely authors, have specific rights to moral rights in
+their Works.
+
+Both Copyright and Related Rights confer the right to control the exploitation
+of a Work and to prevent others from exercising said rights. Rightsholders
+wish to make their Works available under a permissive scheme that grants the
+public legally sanctioned permission to use their Works for any purpose;
+however, because Copyright and Related Rights are highly specific to each
+jurisdiction, rightsholders benefit from a global licensing scheme that
+ensures their Works remain free in all jurisdictions.
+
+For these and/or other purposes and motivations, and without any expectation
+of additional consideration or compensation, the person associating CC0 with a
+Work (the "Affirmer"), to the extent that he or she is an owner of Copyright
+and Related Rights in the Work, voluntarily elects to apply CC0 to the Work
+and publicly distribute the Work under its terms, with knowledge of his or her
+Copyright and Related Rights in the Work and the meaning and intended legal
+effect of CC0 on those rights.
+
+1. Copyright and Related Rights. A Work made available under CC0 may be
+protected by Copyright and Related Rights. The Affirmer hereby irrevocably
+grants to the public a perpetual, worldwide, non-exclusive, no-charge,
+royalty-free, irrevocable license, to the extent permitted by applicable law,
+to use the Work as follows:
+
+  a. reproduce the Work, to incorporate the Work into one or more Collective
+  Works, and to reproduce the Work as incorporated in the Collective Works;
+
+  b. create and reproduce Adaptations, incorporate the Work into one or more
+  Collective Works, and reproduce the Work as incorporated in the Collective
+  Works;
+
+  c. distribute and publicly perform the Work including as incorporated in
+  Collective Works; and,
+
+  d. distribute and publicly perform Adaptations.
+
+  e. For the avoidance of doubt:
+
+    i. Non-waivable Optional License Rights. The Affirmer waives the right to
+    collect royalties or other remuneration for any exercise of the rights
+    granted under this license, whether direct or via a collecting society
+    under any voluntary or waivable statutory or compulsory licensing scheme.
+    In all other cases the Affirmer expressly waives any right to collect
+    royalties or other remuneration for any exercise of the rights granted
+    under this license, whether direct or via a collecting society under any
+    voluntary or waivable statutory or compulsory licensing scheme.
+
+    ii. Waivable Optional License Rights. In all other cases the Affirmer
+    expressly waives any right to collect royalties or other remuneration for
+    any exercise of the rights granted under this license, whether direct or
+    via a collecting society under any voluntary or waivable statutory or
+    compulsory licensing scheme.
+
+    iii. Public Performance Rights. The Affirmer waives the right to
+    collect royalties, whether directly or via a collecting society, for any
+    public performance of the Work.
+
+    iv. Digital Public Performance Rights. The Affirmer waives the right to
+    collect royalties, whether directly or via a collecting society, for any
+    digital public performance of the Work.
+
+2. Waiver of Copyright and Related Rights. To the greatest extent permitted
+by, but not in contravention of, applicable law, the Affirmer hereby
+irrevocably waives, and agrees not to assert, all Copyright and Related
+Rights in the Work, whether now known or hereafter known, including any and
+all moral rights, and any and all rights that may arise from the use of the
+Work, such as privacy and publicity rights, and any and all rights of a
+similar nature that may apply to the Work, to the extent applicable, and the
+Affirmer represents and warrants that, to the best of his or her knowledge,
+he or she has the right to do so.
+
+3. Public License Fallback. Should any part of the above waiver or license be
+unenforceable, the Affirmer grants the public a perpetual, worldwide,
+non-exclusive, no-charge, royalty-free, irrevocable license to the greatest
+extent permitted by applicable law to use the Work as set out in Section 1
+above.
+
+4. Limitations and Disclaimers.
+
+  a. No trademark or patent rights held by the Affirmer are waived, abandoned,
+  or licensed, either expressly or impliedly.
+
+  b. The Affirmer offers the Work as-is and makes no representations or
+  warranties of any kind concerning the Work, express, implied, statutory or
+  otherwise, including without limitation warranties of title,
+  merchantability, fitness for a particular purpose, non infringement, or the
+  absence of latent or other defects, accuracy, or the present or absence of
+  errors, whether or not discoverable, all to the greatest extent permissible
+  under applicable law.
+
+  c. The Affirmer disclaims responsibility for clearing rights of other
+  persons that may apply to the Work or any use thereof, including without
+  limitation any person's Copyright and Related Rights in the Work. Further,
+  the Affirmer disclaims responsibility for obtaining any necessary
+  consents, permissions or other rights required for any use of the Work.
+
+  d. The Affirmer understands and acknowledges that Creative Commons is not a
+  party to this document and has no duty or obligation with respect to this
+  CC0 or use of the Work.
+
+SPDX-License-Identifier: CC0-1.0
