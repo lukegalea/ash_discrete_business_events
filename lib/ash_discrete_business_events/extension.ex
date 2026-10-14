@@ -14,12 +14,12 @@ defmodule AshDiscreteBusinessEvents.Extension do
   use Spark.Dsl.Extension,
     sections: [AshDiscreteBusinessEvents.Dsl.business_events()],
     transformers: [
-      # The mapping compiler's halves: sources verified, artifacts hashed
-      # (declaration order is the hash's input — ora-3 §13.3).
+      # The mapping compiler's halves: sources verified, artifacts hashed,
+      # refusals enforced. All TRANSFORMERS — a Spark verifier runs in
+      # Elixir's after_verify hook, where a raised error only warns, and
+      # a refusal that compiles is not a refusal.
       AshDiscreteBusinessEvents.Transformers.VerifyMappingSources,
-      AshDiscreteBusinessEvents.Transformers.HashMappings
-    ],
-    verifiers: [
-      AshDiscreteBusinessEvents.Verifiers.VerifyMappings
+      AshDiscreteBusinessEvents.Transformers.HashMappings,
+      AshDiscreteBusinessEvents.Transformers.VerifyMappings
     ]
 end

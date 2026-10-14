@@ -304,15 +304,14 @@ defmodule AshDiscreteBusinessEvents.Mappings.Compiler do
     end
   end
 
-  defp write(op, {:ok, nil}, _cast), do: {:write, nil} |> skip_nil(op)
+  # An absent/nil source value writes nothing (no silent nils) unless the
+  # operator carries a default.
+  defp write(op, {:ok, nil}, _cast), do: skip_nil(op)
   defp write(op, {:ok, value}, cast), do: cast.(value) |> to_write(op)
-  defp write(_op, {:error, reason}, _cast), do: {:error, reason}
 
-  defp skip_nil({:write, nil}, op) do
+  defp skip_nil(op) do
     if is_nil(op["default"]), do: :skip, else: {:write, op["default"]}
   end
-
-  defp skip_nil(write, _op), do: write
 
   defp to_write({:ok, value}, _op), do: {:write, value}
   defp to_write({:error, reason}, op), do: {:error, "#{op["target"]}: #{reason}"}
@@ -387,6 +386,11 @@ defmodule AshDiscreteBusinessEvents.Mappings.Compiler do
 
   defp cast(nil, _type), do: {:ok, nil}
 
+  # No declared type = no cast: the value is written as-is. (Compiled
+  # artifacts always carry a type on the casting operators — this is the
+  # stored-data safety net.)
+  defp cast(value, nil), do: {:ok, value}
+
   defp cast(value, type) when is_atom(type) do
     case Ash.Type.cast_input(type, value, []) do
       {:ok, casted} -> {:ok, casted}
@@ -402,7 +406,7 @@ defmodule AshDiscreteBusinessEvents.Mappings.Compiler do
     if classifier do
       canonical = put_in(canonical.provenance["source_record_id"], opts[:source_record_id])
 
-      case classifier.classify(artifact, payload, canonical) do
+      case run_classifier(classifier, artifact, payload, canonical) do
         :emit -> {:ok, canonical}
         {:emit, kind} when is_atom(kind) -> {:ok, %{canonical | event_kind: kind}}
         {:skip, reason} -> {:ok, :skipped, reason}
@@ -419,6 +423,16 @@ defmodule AshDiscreteBusinessEvents.Mappings.Compiler do
 
       {:ok, canonical}
     end
+  end
+
+  # The behaviour's real use is a module (a remote call); a map holding a
+  # `:classify` fun is the accepted test-double shape.
+  defp run_classifier(classifier, artifact, payload, canonical) when is_atom(classifier) do
+    classifier.classify(artifact, payload, canonical)
+  end
+
+  defp run_classifier(%{classify: fun}, artifact, payload, canonical) when is_function(fun, 3) do
+    fun.(artifact, payload, canonical)
   end
 
   defp position(ops, op), do: Enum.find_index(ops, &(&1 == op)) + 1

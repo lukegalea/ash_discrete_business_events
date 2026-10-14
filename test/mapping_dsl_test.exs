@@ -48,7 +48,11 @@ defmodule AshDiscreteBusinessEvents.MappingDslTest do
           end
         end
 
-      assert error.message =~ "project"
+      # An unrecognized operator has no generated macro to call — Elixir
+      # rejects the module at compile time (same guarantee as the
+      # unknown-option shapes: the failure is loud, the vocabulary stays
+      # closed).
+      assert error.description =~ "cannot compile"
     end
 
     test "an operator option outside its own shape is refused (map has no separator)" do

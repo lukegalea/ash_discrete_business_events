@@ -71,7 +71,10 @@ defmodule AshDiscreteBusinessEvents.Dsl.Mapping.Ops do
           doc: "The source payload path (dot-separated for nested maps)."
         ],
         cases: [
-          type: :map,
+          # {:map, :any, :any} — case keys are JSON terms (strings,
+          # numbers, booleans), not atoms; the plain :map type would
+          # demand atom keys.
+          type: {:map, :any, :any},
           required: true,
           doc: "Source value → canonical value. Keys and values must be JSON terms."
         ],

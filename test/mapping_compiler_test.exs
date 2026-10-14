@@ -58,7 +58,7 @@ defmodule AshDiscreteBusinessEvents.MappingCompilerTest do
     canonical
   end
 
-  defp occurred_at, do: ~U[2026-10-01 14:03:00.000000Z]
+  defp occurred_at, do: ~U[2026-10-01 14:03:00Z]
 
   # ── artifact & hash ───────────────────────────────────────────────────
 
@@ -539,6 +539,8 @@ defmodule AshDiscreteBusinessEvents.MappingCompilerTest do
     # run/3 calls classifier.classify(artifact, payload, canonical) — a
     # plain map with a :classify fun satisfies the seam. (The behaviour's
     # real use is a named module; see Fixtures.Classifier.)
-    defp fn_classifier(fun), do: %{classify: fun}
+    defp fn_classifier(decision) when is_function(decision, 3), do: %{classify: decision}
+
+    defp fn_classifier(decision), do: %{classify: fn _a, _p, _c -> decision end}
   end
 end

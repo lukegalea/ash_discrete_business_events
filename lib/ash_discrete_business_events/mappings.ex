@@ -63,7 +63,9 @@ defmodule AshDiscreteBusinessEvents.Mappings do
         {artifact, hash} = Compiler.compile(mapping)
 
         case existing(mapping_version_resource, mapping_name, hash) do
-          {:ok, version} ->
+          # read_one hands back {:ok, nil} when there is no row — only a
+          # real record means "already published".
+          {:ok, version} when not is_nil(version) ->
             {:ok, version}
 
           _ ->

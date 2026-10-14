@@ -51,6 +51,11 @@ defmodule AshDiscreteBusinessEvents.MappingVersionTest do
 
   setup do
     Ecto.Adapters.SQL.Sandbox.checkout(Repo)
+
+    # This file owns the table: clear any rows a previous (non-sandboxed)
+    # run left behind, so publish's content-addressing starts empty.
+    Repo.delete_all(MappingVersion)
+
     :ok
   end
 
@@ -212,7 +217,7 @@ defmodule AshDiscreteBusinessEvents.MappingVersionTest do
     end
 
     test "the active read resolves one row per name — the provenance join's contract" do
-      assert MappingVersion.active("opportunity_stage_changed") == nil
+      assert Mappings.active_version(MappingVersion, :opportunity_stage_changed) == nil
 
       v1 = publish_and_activate(Host, :opportunity_stage_changed, MappingVersion)
 
