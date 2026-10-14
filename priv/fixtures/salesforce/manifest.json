@@ -1,0 +1,56 @@
+{
+  "source": {
+    "object": "Opportunity",
+    "cursor_field": "SystemModstamp",
+    "note": "Monthly snapshots: one query job per run, WHERE SystemModstamp > <cursor> ORDER BY SystemModstamp — the raw layer's periods are the version transitions"
+  },
+  "license": "CC0-1.0",
+  "generated_by": "priv/fixtures/salesforce/generate_corpus.exs (hash-derived, no entropy)",
+  "runs": [
+    {
+      "file": "run-2026-01.csv",
+      "rows": 24,
+      "fetched_at": "2026-01-05T02:00:00Z"
+    },
+    {
+      "file": "run-2026-02.csv",
+      "rows": 30,
+      "fetched_at": "2026-02-05T02:00:00Z"
+    },
+    {
+      "file": "run-2026-03.csv",
+      "rows": 36,
+      "fetched_at": "2026-03-05T02:00:00Z"
+    },
+    {
+      "file": "run-2026-04.csv",
+      "rows": 42,
+      "fetched_at": "2026-04-05T02:00:00Z"
+    },
+    {
+      "file": "run-2026-05.csv",
+      "rows": 48,
+      "fetched_at": "2026-05-05T02:00:00Z"
+    },
+    {
+      "file": "run-2026-06.csv",
+      "rows": 53,
+      "fetched_at": "2026-06-05T02:00:00Z"
+    },
+    {
+      "file": "run-2026-07.csv",
+      "rows": 58,
+      "fetched_at": "2026-07-05T02:00:00Z"
+    },
+    {
+      "file": "run-2026-08.csv",
+      "rows": 63,
+      "fetched_at": "2026-08-05T02:00:00Z"
+    },
+    {
+      "file": "run-2026-09.csv",
+      "rows": 68,
+      "fetched_at": "2026-09-05T02:00:00Z"
+    }
+  ]
+}
