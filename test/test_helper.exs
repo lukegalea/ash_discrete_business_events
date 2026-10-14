@@ -33,6 +33,7 @@ Application.put_env(
   AshDiscreteBusinessEvents.Fixtures.Ledger.SimulationEvent,
   AshDiscreteBusinessEvents.Fixtures.LedgerClearForReplay,
   AshDiscreteBusinessEvents.Fixtures.MappingVersion,
+  AshDiscreteBusinessEvents.Fixtures.PipelineHistory,
   AshDiscreteBusinessEvents.Fixtures.Projection,
   AshDiscreteBusinessEvents.Test.Repo
 ]

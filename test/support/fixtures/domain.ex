@@ -17,6 +17,7 @@ defmodule AshDiscreteBusinessEvents.Fixtures.Domain do
     resource AshDiscreteBusinessEvents.Fixtures.Ledger
     resource AshDiscreteBusinessEvents.Fixtures.Ledger.SimulationEvent
     resource AshDiscreteBusinessEvents.Fixtures.MappingVersion
+    resource AshDiscreteBusinessEvents.Fixtures.PipelineHistory
     resource AshDiscreteBusinessEvents.Fixtures.Projection
   end
 end

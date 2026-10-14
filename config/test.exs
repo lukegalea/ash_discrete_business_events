@@ -30,3 +30,25 @@ config :ash_discrete_business_events, AshDiscreteBusinessEvents.Test.Repo,
 config :ash, disable_async?: true
 
 config :logger, level: :warning
+
+# The projector engine's compile-time surface for THIS repo's own suite
+# (BIZEV-8): the engine's internal resources (Checkpoint, DeadLetter,
+# Registry) resolve their repo and table prefix via Application.compile_env,
+# so this must be set before the dependency compiles. A HOST sets its own
+# values — a lib package's config/ is never loaded by consumers; this file
+# binds only this repo's builds. Projectors are not started here: the suite
+# drives the package's region-scoped drain explicitly.
+config :ash_events_projections,
+  repo: AshDiscreteBusinessEvents.Test.Repo,
+  table_prefix: "bizev_projection_",
+  start_projectors?: false,
+  start_probe?: false
+
+# Ash's temporal gate (§4's mandate, mechanized) refuses the engine's ops
+# applier on temporal projection resources because the package predates the
+# gate. The change is temporal-safe by inspection — it translates ops into
+# atomic field arithmetic and static sets; no wall clock, no side effects —
+# so it is listed under the gate's own escape hatch. A HOST using temporal
+# projections sets the same line; the upstream declaring the callback
+# itself retires this.
+config :ash, :temporal_safe_modules, [AshEvents.Projections.ApplyOpsChange]
