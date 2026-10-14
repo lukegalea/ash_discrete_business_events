@@ -98,7 +98,7 @@ end
 | **BIZEV-4** | **The Ledger: the dedicated AshEvents log — locked, chained, append-only** |
 | **BIZEV-5** | **The mapping engine: rules as versioned, content-hashed data** |
 | **BIZEV-6** (this branch) | **Lineage integration: the run-id contract, batch-granular emission, the leak rule** |
-| BIZEV-7 | Salesforce Bulk API 2.0 vertical + fixture corpus |
+| **BIZEV-7** (this branch) | **Salesforce Bulk API 2.0 vertical + the fixture corpus (the honest demo input)** |
 | BIZEV-8 | Temporal canonical projections over the ledger |
 | BIZEV-9 | Corrections & late-arrival semantics |
 | BIZEV-10 | Simulation twin (closes SIM-NAMESPACE-ISOLATION) |
@@ -459,6 +459,84 @@ AshDiscreteBusinessEvents.RunContext.fan_out(items, fn item -> ... end)
 A nested run (depth > 0 per the correlation provider) whose parent id
 resolves emits the `parent` run facet; omitted, never fabricated,
 otherwise.
+
+## The Salesforce vertical (BIZEV-7)
+
+The adapter boundary is real and **compile-time verified** (§13.2): a
+source's `adapter` must export every `Adapters.Adapter` callback —
+`cursor_field/1`, `fetch_batch/5`, `api_calls_per_batch/0` — or the host
+does not compile; a source declaring more than one `auth` edge is
+rejected outright (ADR 0011).
+
+**`Adapters.SalesforceBulk20`** implements the vertical (§7): one query
+job per sync — `WHERE SystemModstamp > <cursor> ORDER BY
+SystemModstamp` — polled to completion, results downloaded (PK-chunked
+result sets fetched whole, each chunk an accounted API call), the next
+cursor = the results' max `SystemModstamp`. **Budgets are data**: every
+transport call is accounted against the source's `rate_budget`;
+exhaustion raises `Adapters.BudgetExhausted` — the job FAILs visibly,
+lineage records it, and the feed PAUSES at the last completed batch's
+cursor (never degrades). Tokens come from the configured
+`Adapters.AuthProvider` (ADR 0011: Nango yields tokens; a connection id
+is never an action argument; the HTTP seam is a behaviour — CI runs the
+adapter against the fixture-corpus transport, never a live org).
+
+```elixir
+# the sync job template (the host's Oban job calls this):
+{:ok, summary} =
+  AshDiscreteBusinessEvents.Adapters.Sync.run(
+    source: Info.source(MyApp.BusinessEvents, :salesforce),
+    stream: Info.stream_of(source, :opportunity),
+    source_record: MyApp.Platform.SourceRecord,
+    cursor: last_sync_run.cursor,          # cursor-as-data, never job args
+    lineage_job:
+      AshDiscreteBusinessEvents.Lineage.job(:sync,
+        source: :salesforce, stream: :opportunity
+      )
+  )
+
+summary.landed  # NEW periods (identical re-observations are no-ops)
+summary.cursor  # the water mark to persist on the sync-run record
+```
+
+### The fixture corpus (§8's honest demo input)
+
+`priv/fixtures/salesforce/` — a synthesized but realistic dev-org-shaped
+Opportunity export: **nine monthly Bulk 2.0 snapshots, 68
+opportunities, 133 version transitions, 422 rows**, deterministic and
+hash-derived (`generate_corpus.exs` reproduces the CSVs
+byte-for-byte), **CC0-1.0** — data, free of rights. It deliberately
+exercises: growth over time, stage transitions (the raw layer's periods
+ARE the transitions), amount amendments (corrections), and one **late
+arrival** (subject `…0003`'s March row carries a SystemModstamp older
+than February's maximum).
+
+Import it through the FULL land → map → ledger pipeline:
+
+```elixir
+{:ok, summary} =
+  AshDiscreteBusinessEvents.Adapters.SalesforceBulk20.FixtureCorpus.import(
+    host: MyApp.BusinessEvents,
+    source: :salesforce,
+    stream: :opportunity,
+    source_record: MyApp.Platform.SourceRecord,
+    ledger: MyApp.Platform.Ledger,
+    mapping_name: :opportunity_stage_changed,
+    mapping_version_resource: MyApp.Platform.MappingVersion
+  )
+
+summary # %{runs: 9, landed: 201, ledger_events: 201, cursor: …, version_hash: …}
+```
+
+The import publishes → validates → **activates** the mapping version
+first (provenance joins real `MappingVersion` rows), runs the sync
+template per snapshot (real SourceRecord periods; identical re-sights
+are temporal no-ops), and folds every landed record through the active
+mapping — recording to the ledger ONLY at genuine truth transitions
+(§7's corrections rule, folded against ledgered truth-points).
+**Idempotent**: re-importing lands nothing and records nothing. The
+test suite runs the corpus end-to-end — landed periods → ledger events
+→ a BIZEV-8 projector → as-of reads mid-history.
 
 ## Projections (BIZEV-8)
 

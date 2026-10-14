@@ -20,6 +20,9 @@ defmodule AshDiscreteBusinessEvents.Extension do
       # a refusal that compiles is not a refusal.
       AshDiscreteBusinessEvents.Transformers.VerifyMappingSources,
       AshDiscreteBusinessEvents.Transformers.HashMappings,
-      AshDiscreteBusinessEvents.Transformers.VerifyMappings
+      AshDiscreteBusinessEvents.Transformers.VerifyMappings,
+      # The adapter boundary (§13.2, BIZEV-7): conformance complete or no
+      # compile; one auth edge per source.
+      AshDiscreteBusinessEvents.Transformers.VerifyAdapters
     ]
 end

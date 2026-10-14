@@ -25,3 +25,17 @@ path = [
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 ash_discrete_business_events contributors <https://github.com/lukegalea/ash_discrete_business_events>"
 SPDX-License-Identifier = "MIT"
+
+# The Salesforce fixture corpus is DATA, deliberately rights-free (the
+# AST-153 corpus pattern): CC0-1.0. The generator script carries its own
+# inline CC0 header.
+[[annotations]]
+path = [
+  "priv/fixtures/salesforce/*.csv",
+  "priv/fixtures/salesforce/manifest.json",
+  "priv/fixtures/salesforce/README.md",
+  "priv/fixtures/salesforce/LICENSE",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 ash_discrete_business_events contributors <https://github.com/lukegalea/ash_discrete_business_events>"
+SPDX-License-Identifier = "CC0-1.0"

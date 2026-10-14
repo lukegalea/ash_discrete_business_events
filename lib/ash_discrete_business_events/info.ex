@@ -68,6 +68,10 @@ defmodule AshDiscreteBusinessEvents.Info do
   @doc """
   The declared auth strategy for the given source name, or `nil` when the
   source declares none (or the source itself is undeclared).
+
+  Since BIZEV-7 the compile-time verifier REJECTS a source with more than
+  one `auth` declaration — the multi-auth ambiguity never reaches a
+  compiled host. This helper stays for direct struct reads.
   """
   @spec auth(module() | Spark.Dsl.t(), atom()) :: Dsl.Source.Auth.t() | nil
   def auth(dsl_state, source_name) when is_atom(source_name) do
@@ -79,23 +83,14 @@ defmodule AshDiscreteBusinessEvents.Info do
 
   @doc """
   The auth strategy of the given `t:Dsl.Source.t/0` — a single `auth`
-  declaration, or `nil`. More than one `auth` per source is a schema-level
-  error waiting in BIZEV-7's verifier; today the first one wins and the
-  extra is ignored, loudly enough in review.
+  declaration, or `nil`. The compile-time verifier (VerifyAdapters)
+  rejects multi-auth sources outright since BIZEV-7; if one reaches this
+  helper anyway (hand-built struct), the first declaration wins.
   """
   @spec auth_of(Dsl.Source.t()) :: Dsl.Source.Auth.t() | nil
   def auth_of(%Dsl.Source{auth: []}), do: nil
 
-  def auth_of(%Dsl.Source{auth: [auth | extra]}) do
-    if extra != [] do
-      IO.warn(
-        "multiple `auth` declarations in one source; all but the first are ignored " <>
-          "(a verifier rejecting this outright lands with BIZEV-7)"
-      )
-    end
-
-    auth
-  end
+  def auth_of(%Dsl.Source{auth: [auth | _extra]}), do: auth
 
   @doc """
   All declared mappings, in declaration order.

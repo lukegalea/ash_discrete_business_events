@@ -29,7 +29,7 @@ config :ash_discrete_business_events, AshDiscreteBusinessEvents.Test.Repo,
 # ash_postgres` writes.
 config :ash, disable_async?: true
 
-config :logger, level: :warning
+config :logger, level: :error
 
 # The projector engine's compile-time surface for THIS repo's own suite
 # (BIZEV-8): the engine's internal resources (Checkpoint, DeadLetter,
