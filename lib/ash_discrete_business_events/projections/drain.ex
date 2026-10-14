@@ -45,25 +45,73 @@ defmodule AshDiscreteBusinessEvents.Projections.Drain do
   """
   @spec drain(module(), atom(), keyword()) :: non_neg_integer()
   def drain(projector, region, opts \\ []) when is_atom(region) do
-    checkpoint = checkpoint_for(projector, region)
+    event_log = event_log(projector, opts)
+    checkpoint = checkpoint_for(projector, region, opts)
     after_sequence = checkpoint.last_seen_event_id || 0
 
     events =
-      projector.__event_log__()
+      event_log
       |> Ash.Query.for_read(:feed, %{region: region, after_sequence: after_sequence})
+      |> filter_sim_run(event_log, projector, opts)
       |> Ash.Query.limit(Keyword.get(opts, :limit, @batch_limit))
       |> Ash.read!(authorize?: false)
 
-    Enum.each(events, &process_event(projector, &1))
+    Enum.each(events, &process_event(projector, event_log, &1, opts))
 
-    length(events) + drained_after?(projector, region, length(events))
+    length(events) + drained_after?(projector, region, opts, length(events))
+  end
+
+  @doc """
+  Drains one SIMULATION RUN's feed — from the ledger's `SimulationEvent`
+  twin, never the real log — through the projector, with checkpoints
+  namespaced `sim:<name>.<region>:<run>` (SIM-NAMESPACE-ISOLATION AC-2):
+  a simulation drain's cursor can never alias, satisfy, or be satisfied
+  by a real drain's checkpoint on the same projector and region, and two
+  simulation runs never share one either.
+  """
+  @spec simulation(module(), String.t(), atom(), keyword()) :: non_neg_integer()
+  def simulation(projector, simulation_run, region, opts \\ [])
+      when is_binary(simulation_run) and is_atom(region) do
+    twin = simulation_event_log(projector)
+
+    drain(
+      projector,
+      region,
+      Keyword.merge(opts, simulation_run: simulation_run, event_log: twin)
+    )
+  end
+
+  @doc "The SimulationEvent twin of the projector's event log."
+  @spec simulation_event_log(module()) :: module()
+  def simulation_event_log(projector) do
+    Module.concat(projector.__event_log__(), "SimulationEvent")
+  end
+
+  defp event_log(projector, opts) do
+    Keyword.get(opts, :event_log, projector.__event_log__())
+  end
+
+  # One simulation run's feed is ITS OWN events: the twin's table holds
+  # every run, so the drain filters on the run label the rows carry.
+  defp filter_sim_run(query, event_log, projector, opts) do
+    case Keyword.get(opts, :simulation_run) do
+      nil ->
+        query
+
+      run ->
+        if event_log == simulation_event_log(projector) do
+          Ash.Query.do_filter(query, Ash.Expr.expr(simulation_run == ^run))
+        else
+          query
+        end
+    end
   end
 
   # A full batch means the feed may not be exhausted yet — keep draining.
-  defp drained_after?(_projector, _region, count) when count < @batch_limit, do: 0
+  defp drained_after?(_projector, _region, _opts, count) when count < @batch_limit, do: 0
 
-  defp drained_after?(projector, region, _count) do
-    case drain(projector, region) do
+  defp drained_after?(projector, region, opts, _count) do
+    case drain(projector, region, opts) do
       0 -> 0
       more -> more
     end
@@ -71,27 +119,41 @@ defmodule AshDiscreteBusinessEvents.Projections.Drain do
 
   @doc "The per-(projector, region) checkpoint's name — two regions never share a cursor."
   @spec checkpoint_name(module(), atom()) :: String.t()
-  def checkpoint_name(projector, region) do
-    "#{projector.__projector_name__()}.#{region}"
+  def checkpoint_name(projector, region), do: checkpoint_name(projector, region, [])
+
+  @doc """
+  The checkpoint's name, with the SIM-NAMESPACE-ISOLATION contract:
+  real drains key `<name>.<region>`; a simulation drain keys
+  `sim:<name>.<region>:<run>` — the `sim:` prefix plus the run label
+  make aliasing with a real checkpoint (or another simulation run)
+  structurally impossible, not a filter discipline. `sim:` is a
+  RESERVED prefix for real projector names.
+  """
+  @spec checkpoint_name(module(), atom(), keyword()) :: String.t()
+  def checkpoint_name(projector, region, opts) do
+    case Keyword.get(opts, :simulation_run) do
+      nil -> "#{projector.__projector_name__()}.#{region}"
+      run -> "sim:#{projector.__projector_name__()}.#{region}:#{run}"
+    end
   end
 
   # Per-event transaction: ops + checkpoint advance commit atomically. A
   # handler that raises rolls back and routes the event to the DeadLetter
   # in a fresh transaction, then the checkpoint advances past it — the
   # projector keeps flowing (the engine's policy, inherited verbatim).
-  defp process_event(projector, event) do
+  defp process_event(projector, event_log, event, opts) do
     fn ->
       apply_event(projector, event)
-      checkpoint = checkpoint_for(projector, event.region)
+      checkpoint = checkpoint_for(projector, event.region, opts)
       Checkpoint.advance(checkpoint, event.sequence)
     end
     |> Config.repo().transaction()
     |> case do
       {:ok, _} -> :ok
-      {:error, reason} -> handle_failure(projector, event, reason, [])
+      {:error, reason} -> handle_failure(projector, event_log, event, reason, [])
     end
   rescue
-    error -> handle_failure(projector, event, error, __STACKTRACE__)
+    error -> handle_failure(projector, event_log, event, error, __STACKTRACE__)
   end
 
   defp apply_event(projector, event) do
@@ -175,8 +237,9 @@ defmodule AshDiscreteBusinessEvents.Projections.Drain do
     if Ash.Resource.Info.temporal?(resource), do: event.occurred_at, else: nil
   end
 
-  defp handle_failure(projector, event, error, stacktrace) do
-    name = checkpoint_name(projector, event.region)
+  defp handle_failure(projector, event_log, event, error, stacktrace) do
+    opts = event_log_opts(event_log, event, projector)
+    name = checkpoint_name(projector, event.region, opts)
 
     Config.repo().transaction(fn ->
       DeadLetter.record_failure(%{
@@ -188,7 +251,7 @@ defmodule AshDiscreteBusinessEvents.Projections.Drain do
         failed_at: DateTime.utc_now()
       })
 
-      checkpoint = checkpoint_for(projector, event.region)
+      checkpoint = checkpoint_for(projector, event.region, opts)
       Checkpoint.advance(checkpoint, event.sequence)
     end)
   rescue
@@ -198,9 +261,20 @@ defmodule AshDiscreteBusinessEvents.Projections.Drain do
       reraise e, __STACKTRACE__
   end
 
-  defp checkpoint_for(projector, region) do
-    {:ok, checkpoint} = Checkpoint.initialize(checkpoint_name(projector, region))
+  defp checkpoint_for(projector, region, opts) do
+    {:ok, checkpoint} = Checkpoint.initialize(checkpoint_name(projector, region, opts))
     checkpoint
+  end
+
+  # The namespace opts for a drained event log: when it is the
+  # SimulationEvent twin, the run label rides the event — the checkpoint
+  # (and DLQ quarantine) names derive from the same label the rows carry.
+  defp event_log_opts(event_log, event, projector) do
+    if event_log == simulation_event_log(projector) do
+      [simulation_run: event.simulation_run]
+    else
+      []
+    end
   end
 
   defp error_class(%mod{}), do: inspect(mod)

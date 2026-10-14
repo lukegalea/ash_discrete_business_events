@@ -99,6 +99,70 @@ defmodule AshDiscreteBusinessEvents do
   # Spark validates the `use` options against `opt_schema` above before this
   # runs; we persist the accepted ones so `AshDiscreteBusinessEvents.Info`
   # can read them back (the `otp_app` pattern from `Spark.Dsl`).
+  @doc """
+  The SIM-NAMESPACE-ISOLATION labeling contract, executable (AC-3):
+  groups a ledger's SimulationEvent twin rows by their `simulation_run`
+  label, so any surface that lists event history can label simulated
+  runs unmistakably — `simulated: true` plus the run label ride every
+  twin row by shape, and this function is the supported read.
+
+  Accepts the ledger resource OR its SimulationEvent twin directly.
+  Returns one map per run — `simulation_run`, `events`, `subjects`,
+  `first_observed_at`, `last_observed_at` — sorted by run label.
+
+  ## The contract (the ticket's "unmistakable in the UI", since the
+  package ships no UI)
+
+    * Simulated events live ONLY in the twin (`<Ledger>.SimulationEvent`)
+      — a real-ledger read can never contain one, structurally.
+    * Every twin row carries `simulated: true` and `simulation_run` —
+      set at record time, not query time.
+    * Any surface showing these rows renders the run label (and/or the
+      literal word "simulated") — a row without a run label cannot come
+      from the twin, and a row in the real ledger cannot be simulated.
+
+  Real projector rebuilds never read the twin, so simulated events can
+  never appear in a rebuilt state (AC-1), and simulation drains key
+  their checkpoints `sim:<name>.<region>:<run>` — never aliasing a real
+  drain's cursor (AC-2).
+  """
+  @spec simulation_runs(module()) :: [
+          %{
+            required(:simulation_run) => String.t(),
+            required(:events) => non_neg_integer(),
+            required(:subjects) => non_neg_integer(),
+            required(:first_observed_at) => DateTime.t() | nil,
+            required(:last_observed_at) => DateTime.t() | nil
+          }
+        ]
+  def simulation_runs(ledger_or_twin) do
+    twin = simulation_twin(ledger_or_twin)
+
+    twin
+    |> Ash.read!(authorize?: false)
+    |> Enum.group_by(& &1.simulation_run)
+    |> Enum.map(fn {run, rows} ->
+      observed = Enum.map(rows, & &1.occurred_at) |> Enum.sort(DateTime)
+
+      %{
+        simulation_run: run,
+        events: length(rows),
+        subjects: rows |> Enum.map(& &1.subject_external_id) |> Enum.uniq() |> length(),
+        first_observed_at: List.first(observed),
+        last_observed_at: List.last(observed)
+      }
+    end)
+    |> Enum.sort_by(& &1.simulation_run)
+  end
+
+  defp simulation_twin(resource) do
+    if Ash.Resource.Info.attribute(resource, :simulation_run) do
+      resource
+    else
+      Module.concat(resource, "SimulationEvent")
+    end
+  end
+
   @doc false
   def handle_opts(opts) do
     domains = opts |> Keyword.get(:domains, []) |> Macro.escape()
