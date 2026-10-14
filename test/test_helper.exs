@@ -13,6 +13,7 @@
   AshDiscreteBusinessEvents.Fixtures.Ledger,
   AshDiscreteBusinessEvents.Fixtures.Ledger.SimulationEvent,
   AshDiscreteBusinessEvents.Fixtures.LedgerClearForReplay,
+  AshDiscreteBusinessEvents.Fixtures.MappingVersion,
   AshDiscreteBusinessEvents.Fixtures.Projection,
   AshDiscreteBusinessEvents.Test.Repo
 ]

@@ -68,7 +68,13 @@ defmodule MyApp.BusinessEvents do
     end
 
     mapping :opportunity_stage_changed, source: {:salesforce, :opportunity} do
-      # closed operator vocabulary — lands in BIZEV-5
+      map :stage, from: "StageName", type: :string
+      map :amount, from: "Amount", type: :integer
+      map :occurred_at, from: "SystemModstamp", type: :utc_datetime_usec
+
+      constant :source_system, value: "salesforce"
+
+      unmapped_because :owner_email, "PII — kept out of canonical events"
     end
   end
 end
@@ -89,8 +95,8 @@ end
 |---|---|
 | **BIZEV-2** | Contracts frozen — DSL sections, ledger row shape and SourceRecord identity pinned by fixture tests; review checklist (`docs/REVIEW.md`) |
 | **BIZEV-3** | SourceRecord: the temporal raw-landing layer |
-| **BIZEV-4** (this branch) | **The Ledger: the dedicated AshEvents log — locked, chained, append-only** |
-| BIZEV-5 | Mapping engine: rules as versioned, content-hashed data |
+| **BIZEV-4** | **The Ledger: the dedicated AshEvents log — locked, chained, append-only** |
+| **BIZEV-5** (this branch) | **The mapping engine: rules as versioned, content-hashed data** |
 | BIZEV-6 | Lineage integration (batch granularity, leak-rule test) |
 | BIZEV-7 | Salesforce Bulk API 2.0 vertical + fixture corpus |
 | BIZEV-8 | Temporal canonical projections over the ledger |
@@ -249,6 +255,124 @@ MyApp.Ingestion.SourceRecord.at(:salesforce, :opportunity, "0065f000003Xy7ZAAS",
   :us, ~U[2026-10-01 16:00:00.000000Z]
 )
 ```
+
+## The mapping engine (BIZEV-5)
+
+A `mapping` declares one event kind's rule for turning a SourceRecord
+observation into canonical event fields. The body's vocabulary is
+**closed and schema-verified** — a typo is a compile error, and each
+operator accepts only its own options:
+
+- `map :target, from: "Path", type: :atom` — payload path → target key,
+  cast to the Ash type; an absent path writes nothing (no silent nils).
+- `decode :target, from: "Path", cases: %{"source" => "canonical"}`
+  (optional `default:`) — a translation table. A present value with no
+  case is a **loud apply-time error**; routing surprises must not fold
+  silently.
+- `coalesce :target, from: ["A", "B"]` — the first non-nil value, in
+  priority order.
+- `concat :target, from: ["A", "B"], separator: " / "` — the non-nil
+  parts joined.
+- `constant :target, value: "fixed"` — a fixed JSON-term value.
+- `unmapped_because :target, "why"` — refusal by name: a deliberately
+  unmapped key and its reason are authored data carried on the artifact
+  and surfaced on every apply, never a silent absence.
+
+The compiler refuses redundancy **by name** (two operators writing the
+same target key fail compilation, each named with its operator and
+declaration position) and the known footguns (empty path/case lists, a
+nil `constant`). It also enforces the **occurred-vs-observed discipline**
+(§1.3): every mapping must extract `occurred_at` — the source's truth
+time — from the payload with a datetime type. The mapping owns no clock;
+observed time is the write's business.
+
+### Rules as data
+
+Each declaration compiles to a canonical artifact and a content hash (8
+hex chars of the artifact's SHA-256). **The hash covers the operators in
+declaration order** (§13.3): the ops are serialized as a *list* — never
+Map iteration — so reordering the rules is a different rule, with a
+different hash. The name is part of the hash on purpose: the mapping
+name *is* the event kind the rule emits, so a rename mints a new
+version rather than masquerading as the same rule.
+
+The artifact is published into a `MappingVersion` resource — the same
+snapshot lifecycle as ash_decisions: **draft → validate → activate**.
+`validate` re-runs the compiler's structural checks over the *stored*
+artifact (a drifted or hand-edited row is refused loudly);
+`activate` freezes the version as the name's active one, superseding —
+demoting, never rewriting — the previous active. Content never changes
+after draft: a changed declaration mints a new version row.
+
+```elixir
+defmodule MyApp.Platform.MappingVersion do
+  use Ash.Resource, domain: MyApp.BusinessEvents, data_layer: AshPostgres.DataLayer
+
+  use AshDiscreteBusinessEvents.Resources, :mapping_version
+
+  postgres do
+    table "mapping_versions"
+    repo MyApp.Repo
+  end
+end
+
+# Publish the declared rule, walk the lifecycle:
+{:ok, version} =
+  AshDiscreteBusinessEvents.Mappings.publish(
+    MyApp.BusinessEvents,
+    :opportunity_stage_changed,
+    MyApp.Platform.MappingVersion
+  )
+
+version
+|> MyApp.Platform.MappingVersion.validate_version!()
+|> AshDiscreteBusinessEvents.Mappings.activate!()
+
+# The name's active version — what new applies use:
+AshDiscreteBusinessEvents.Mappings.active_version(
+  MyApp.Platform.MappingVersion,
+  :opportunity_stage_changed
+)
+```
+
+### The apply path
+
+`AshDiscreteBusinessEvents.Mappings.run/3` applies an artifact (or a
+stored version) to a raw payload. It is a **pure function** — no clocks,
+no actors, no I/O — so rule-version-pinned replay is a property of the
+engine, not a discipline of its callers: the same artifact over the same
+payload yields the same canonical fields, always.
+
+```elixir
+{:ok, canonical} =
+  AshDiscreteBusinessEvents.Mappings.run(active_version, source_record.raw_payload,
+    source_record_id: source_record.id
+  )
+
+canonical.event_kind   # the mapping name — unless a classifier overrode it
+canonical.occurred_at  # the source's truth time, from the payload
+canonical.data         # the written targets (occurred_at excluded — it has its own ledger column)
+canonical.unmapped     # the unmapped_because refusals, by name
+canonical.provenance   # %{mapping_name, mapping_version_hash, source_record_id}
+```
+
+`canonical.provenance` is the ledger row's join, ready-made: the
+`mapping_name` + `mapping_version_hash` pair resolves to exactly one
+`MappingVersion` row, so any ledger row points back into replayable data
+rather than a code revision. Re-applying vN reproduces vN's outputs
+byte-for-byte; activating vN+1 changes the outputs only where its
+operators differ.
+
+### Classification is a seam, not a dependency
+
+*Which records become which event kind* — routing, thresholds — is not
+the operators' job (they shape the event) and not this package's job. A
+mapping may name a module implementing the
+`AshDiscreteBusinessEvents.Mappings.Classifier` behaviour
+(`classify_with`); it returns `:emit`, `{:emit, kind}`, `{:skip,
+reason}`, or `{:error, term}`. An ash_decisions DMN table behind this
+behaviour is the host's wiring — the package ships the seam and the
+behaviour, never the dependency.
 
 ## Review discipline
 

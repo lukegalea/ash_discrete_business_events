@@ -155,21 +155,38 @@ defmodule AshDiscreteBusinessEvents.Dsl do
     a SourceRecord observation into a ledger event.
 
     Every mapping declaration compiles to a content-hashed, versioned
-    artifact (draft → validate → activate — BIZEV-5), and the hash rides
-    every ledger row the rule produces as provenance, so the mapping that
-    produced any event is reconstructable from the row alone.
+    artifact (draft → validate → activate — the ash_decisions snapshot
+    pattern), and the hash rides every ledger row the rule produces as
+    provenance, so the mapping that produced any event is
+    reconstructable from the row alone. The hash covers the operators in
+    DECLARATION ORDER (ora-3 §13.3): the order of the rules is part of
+    the rule.
 
-    The body's closed operator vocabulary lands in BIZEV-5 (§5.3);
-    classification may delegate to an ash_decisions DMN table named in
-    the mapping. Redundant operators are refused by name, in the
-    ash_strangler shape — deterministic and provenance-carrying,
-    forward-only, replay-checked.
+    The body's vocabulary is closed (§5.3, the ash_strangler shape —
+    deterministic and provenance-carrying, forward-only, replay-checked):
+    `map`, `decode`, `coalesce`, `concat`, `constant`, and
+    `unmapped_because` (refusal-by-name). Redundant operators are refused
+    BY NAME at compile time; every mapping must extract `occurred_at`
+    (source truth time) from the payload — the occurred-vs-observed
+    discipline is compiler-enforced, not convention.
     """,
     examples: [
       """
       mapping :opportunity_stage_changed do
         source {:salesforce, :opportunity}
-        # closed operator vocabulary — BIZEV-5
+
+        map :stage, from: "StageName", type: :string
+        map :amount, from: "Amount", type: :integer
+        map :occurred_at, from: "SystemModstamp", type: :utc_datetime_usec
+
+        decode :stage_bucket, from: "StageName",
+          cases: %{"Prospecting" => "early", "Negotiation" => "late"}
+
+        coalesce :close_date, from: ["CloseDate", "ExpectedCloseDate"]
+        concat :label, from: ["Name", "StageName"], separator: " / "
+        constant :source_system, value: "salesforce"
+
+        unmapped_because :owner_email, "PII — kept out of canonical events (§9.5)"
       end
       """,
       """
@@ -182,19 +199,38 @@ defmodule AshDiscreteBusinessEvents.Dsl do
     ],
     target: AshDiscreteBusinessEvents.Dsl.Mapping,
     args: [:name],
+    entities: [
+      ops: [
+        AshDiscreteBusinessEvents.Dsl.Mapping.Ops.map(),
+        AshDiscreteBusinessEvents.Dsl.Mapping.Ops.decode(),
+        AshDiscreteBusinessEvents.Dsl.Mapping.Ops.coalesce(),
+        AshDiscreteBusinessEvents.Dsl.Mapping.Ops.concat(),
+        AshDiscreteBusinessEvents.Dsl.Mapping.Ops.constant(),
+        AshDiscreteBusinessEvents.Dsl.Mapping.Ops.unmapped_because()
+      ]
+    ],
     schema: [
       name: [
         type: :atom,
         doc:
           "The mapping name — the `mapping_name` provenance pointer on every ledger " <>
-            "row the rule produces."
+            "row the rule produces, and the event kind the rule emits."
       ],
       source: [
         type: {:tuple, [:atom, :atom]},
         required: true,
         doc:
           "The `{source_name, stream_name}` this mapping reads from. Both halves " <>
-            "must name a declared source and stream (verified from BIZEV-5 on)."
+            "must name a declared source and stream (compiler-verified)."
+      ],
+      classify_with: [
+        type: :atom,
+        doc:
+          "Optional: a module implementing `AshDiscreteBusinessEvents.Mappings.Classifier` " <>
+            "— the classification seam (§5.3). An ash_decisions DMN table behind this " <>
+            "behaviour is the host's wiring; the package ships the seam and a behaviour, " <>
+            "never the dependency. It may emit, override the event kind, or skip with a " <>
+            "reason."
       ]
     ]
   }

@@ -120,8 +120,10 @@ platform through.
 
 ## Status
 
-BIZEV-2 froze the contracts; BIZEV-3 delivered the raw layer. The ledger
-lands in BIZEV-4, the mapping engine in BIZEV-5. The row shapes are
-pinned by the fixture-pinned contract tests in `test/` — amending them
-requires amending those tests and citing the design section that
-motivates the amendment.
+BIZEV-2 froze the contracts; BIZEV-3 delivered the raw layer; BIZEV-4
+the ledger; BIZEV-5 the mapping engine — the closed operator vocabulary,
+content-hashed `MappingVersion` artifacts (draft → validate → activate),
+the pure apply path, and the classifier seam. The row shapes are pinned
+by the fixture-pinned contract tests in `test/` — amending them requires
+amending those tests and citing the design section that motivates the
+amendment.

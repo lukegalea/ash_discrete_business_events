@@ -31,7 +31,12 @@ defmodule AshDiscreteBusinessEvents.Fixtures.Host do
     # Flagged for ora-3 review; see dsl_test.exs, which pins both forms.
     mapping :opportunity_stage_changed do
       source {:salesforce, :opportunity}
-      # closed operator vocabulary — BIZEV-5
+
+      map(:stage, from: "StageName", type: :string)
+      map(:amount, from: "Amount", type: :integer)
+      map(:occurred_at, from: "SystemModstamp", type: :utc_datetime_usec)
+
+      unmapped_because(:owner_email, "PII — kept out of canonical events (§9.5)")
     end
   end
 end

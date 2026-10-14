@@ -14,9 +14,12 @@ defmodule AshDiscreteBusinessEvents.Extension do
   use Spark.Dsl.Extension,
     sections: [AshDiscreteBusinessEvents.Dsl.business_events()],
     transformers: [
-      # Registered in BIZEV-2 to freeze the extension's transformer list;
-      # both are pass-throughs until the mapping engine lands (BIZEV-5).
+      # The mapping compiler's halves: sources verified, artifacts hashed,
+      # refusals enforced. All TRANSFORMERS — a Spark verifier runs in
+      # Elixir's after_verify hook, where a raised error only warns, and
+      # a refusal that compiles is not a refusal.
       AshDiscreteBusinessEvents.Transformers.VerifyMappingSources,
-      AshDiscreteBusinessEvents.Transformers.HashMappings
+      AshDiscreteBusinessEvents.Transformers.HashMappings,
+      AshDiscreteBusinessEvents.Transformers.VerifyMappings
     ]
 end

@@ -46,26 +46,40 @@ defmodule AshDiscreteBusinessEvents do
           end
 
           mapping :opportunity_stage_changed, source: {:salesforce, :opportunity} do
-            # closed operator vocabulary — lands in BIZEV-5
+            map :stage, from: "StageName", type: :string
+            map :amount, from: "Amount", type: :integer
+            map :occurred_at, from: "SystemModstamp", type: :utc_datetime_usec
+
+            constant :source_system, value: "salesforce"
+
+            unmapped_because :owner_email, "PII — kept out of canonical events"
           end
         end
       end
 
+  The mapping body's vocabulary is closed and schema-verified (a typo is
+  a compile error): `map`, `decode`, `coalesce`, `concat`, `constant`,
+  and `unmapped_because` — with redundancy refused by name, dangerous
+  combos refused, and an `occurred_at` extraction compiler-enforced in
+  every mapping. Each declaration compiles to a content-hashed artifact
+  (`AshDiscreteBusinessEvents.Mappings.publish/3` records it as a
+  `MappingVersion` — draft → validate → activate), the hash riding every
+  ledger row the rule produces as provenance.
+
   Hosts instantiate the resources on their own base via the resource
-  macros — `use AshDiscreteBusinessEvents.Resources, :source_record` and
-  `:ledger` — **resource macros, not concrete modules**: Spark builds
-  policies at the package's compile time, so concrete modules can't take
-  host policy blocks; macros inherit the host's grant union natively.
-  Landing external data is exactly the kind of action a tenant must be
-  able to govern.
+  macros — `use AshDiscreteBusinessEvents.Resources, :source_record`,
+  `:ledger`, and `:mapping_version` — **resource macros, not concrete
+  modules**: Spark builds policies at the package's compile time, so
+  concrete modules can't take host policy blocks; macros inherit the
+  host's grant union natively. Landing external data is exactly the kind
+  of action a tenant must be able to govern.
 
   ## Status
 
-  BIZEV-2 (this slice) freezes the contracts: the DSL surface, the ledger
-  row shape and the SourceRecord identity tuple are pinned by
-  fixture-pinned contract tests. The resources themselves land in
-  BIZEV-3 (SourceRecord) and BIZEV-4 (the ledger); the mapping operators
-  in BIZEV-5.
+  BIZEV-2 froze the contracts (DSL surface, ledger row shape,
+  SourceRecord identity tuple); BIZEV-3 delivered SourceRecord; BIZEV-4
+  the ledger; BIZEV-5 (this slice) the mapping engine — rules as
+  versioned, content-hashed data.
   """
 
   use Spark.Dsl,
