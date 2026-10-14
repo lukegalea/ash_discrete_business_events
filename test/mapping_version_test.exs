@@ -31,20 +31,20 @@ defmodule AshDiscreteBusinessEvents.MappingVersionTest do
 
     business_events do
       source :salesforce do
-        region :us
-        stream :opportunity
+        region(:us)
+        stream(:opportunity)
       end
 
       mapping :opportunity_stage_changed do
         source {:salesforce, :opportunity}
 
-        map :stage, from: "StageName", type: :string
-        map :amount, from: "Amount", type: :integer
-        map :occurred_at, from: "SystemModstamp", type: :utc_datetime_usec
+        map(:stage, from: "StageName", type: :string)
+        map(:amount, from: "Amount", type: :integer)
+        map(:occurred_at, from: "SystemModstamp", type: :utc_datetime_usec)
 
-        concat :label, from: ["Name", "StageName"], separator: " / "
+        concat(:label, from: ["Name", "StageName"], separator: " / ")
 
-        unmapped_because :owner_email, "PII — kept out of canonical events (§9.5)"
+        unmapped_because(:owner_email, "PII — kept out of canonical events (§9.5)")
       end
     end
   end
@@ -90,9 +90,7 @@ defmodule AshDiscreteBusinessEvents.MappingVersionTest do
   defp apply_over(version, records) do
     Enum.map(records, fn record ->
       assert {:ok, canonical} =
-               Mappings.run(version, record.raw_payload,
-                 source_record_id: record.external_id
-               )
+               Mappings.run(version, record.raw_payload, source_record_id: record.external_id)
 
       canonical
     end)

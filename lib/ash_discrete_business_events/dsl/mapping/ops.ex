@@ -136,7 +136,8 @@ defmodule AshDiscreteBusinessEvents.Dsl.Mapping.Ops do
   def constant do
     %Spark.Dsl.Entity{
       name: :constant,
-      describe: "Writes a fixed JSON-term value. A nil value is refused — that is `unmapped_because`'s job.",
+      describe:
+        "Writes a fixed JSON-term value. A nil value is refused — that is `unmapped_because`'s job.",
       examples: [
         ~s(constant :source_system, value: "salesforce")
       ],
@@ -172,7 +173,11 @@ defmodule AshDiscreteBusinessEvents.Dsl.Mapping.Ops do
       auto_set_fields: [op: :unmapped_because],
       schema: [
         target: [type: :atom, required: true, doc: "The deliberately-unmapped canonical key."],
-        reason: [type: :string, required: true, doc: "Why it is unmapped — carried on the artifact."]
+        reason: [
+          type: :string,
+          required: true,
+          doc: "Why it is unmapped — carried on the artifact."
+        ]
       ]
     }
   end

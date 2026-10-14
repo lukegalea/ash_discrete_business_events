@@ -104,8 +104,8 @@ defmodule AshDiscreteBusinessEvents.DslTest do
 
         business_events do
           source :salesforce do
-            region :us
-            stream :opportunity
+            region(:us)
+            stream(:opportunity)
           end
 
           mapping(:opportunity_stage_changed, source: {:salesforce, :opportunity})

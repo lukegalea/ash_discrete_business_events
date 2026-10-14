@@ -75,6 +75,7 @@ defmodule AshDiscreteBusinessEvents.MappingCompilerTest do
 
       assert artifact["mapping_name"] == "opportunity_stage_changed"
       assert artifact["source"] == ["salesforce", "opportunity"]
+
       assert Enum.map(artifact["ops"], & &1["target"]) == [
                "stage",
                "amount",
@@ -100,6 +101,7 @@ defmodule AshDiscreteBusinessEvents.MappingCompilerTest do
 
     test "the hash is deterministic: the same declaration compiles to the same bytes" do
       {artifact, hash} = Host |> Info.mapping(:opportunity_stage_changed) |> Compiler.compile()
+
       {artifact_again, hash_again} =
         Host |> Info.mapping(:opportunity_stage_changed) |> Compiler.compile()
 
@@ -244,14 +246,15 @@ defmodule AshDiscreteBusinessEvents.MappingCompilerTest do
     end
 
     test "dot-separated paths reach nested payloads" do
-      artifact = artifact_with_ops([
-        %{
-          "op" => "map",
-          "target" => "stage",
-          "from" => "Opportunity.StageName",
-          "type" => "string"
-        }
-      ])
+      artifact =
+        artifact_with_ops([
+          %{
+            "op" => "map",
+            "target" => "stage",
+            "from" => "Opportunity.StageName",
+            "type" => "string"
+          }
+        ])
 
       payload = %{
         "T" => "2026-10-01T14:03:00.000+0000",
@@ -270,7 +273,10 @@ defmodule AshDiscreteBusinessEvents.MappingCompilerTest do
             "op" => "decode",
             "target" => "stage_bucket",
             "from" => "StageName",
-            "cases" => %{Jason.encode!("Qualification") => "early", Jason.encode!("Closed Won") => "won"}
+            "cases" => %{
+              Jason.encode!("Qualification") => "early",
+              Jason.encode!("Closed Won") => "won"
+            }
           }
         ])
 
@@ -392,7 +398,12 @@ defmodule AshDiscreteBusinessEvents.MappingCompilerTest do
 
       nil_part =
         artifact_with_ops([
-          %{"op" => "concat", "target" => "label", "from" => ["Missing", "StageName"], "separator" => "-"}
+          %{
+            "op" => "concat",
+            "target" => "label",
+            "from" => ["Missing", "StageName"],
+            "separator" => "-"
+          }
         ])
 
       assert apply_ok(nil_part, @payload).data["label"] == "Qualification"
@@ -405,7 +416,9 @@ defmodule AshDiscreteBusinessEvents.MappingCompilerTest do
 
     test "constant writes its fixed value" do
       artifact =
-        artifact_with_ops([%{"op" => "constant", "target" => "source_system", "value" => "salesforce"}])
+        artifact_with_ops([
+          %{"op" => "constant", "target" => "source_system", "value" => "salesforce"}
+        ])
 
       assert apply_ok(artifact, @payload).data["source_system"] == "salesforce"
     end
@@ -507,10 +520,11 @@ defmodule AshDiscreteBusinessEvents.MappingCompilerTest do
       payload = salesforce_payload()
       test_self = self()
 
-      classifier = fn_classifier(fn a, p, canonical ->
-        send(test_self, {:classified, a, p, canonical})
-        :emit
-      end)
+      classifier =
+        fn_classifier(fn a, p, canonical ->
+          send(test_self, {:classified, a, p, canonical})
+          :emit
+        end)
 
       assert {:ok, _} = Compiler.run(artifact, payload, classifier: classifier)
 

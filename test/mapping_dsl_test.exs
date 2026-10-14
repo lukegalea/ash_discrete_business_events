@@ -32,17 +32,17 @@ defmodule AshDiscreteBusinessEvents.MappingDslTest do
 
             business_events do
               source :s do
-                region :us
-                stream :t
+                region(:us)
+                stream(:t)
               end
 
               mapping :bad do
                 source {:s, :t}
 
-                map :stage, from: "StageName", type: :string
-                map :occurred_at, from: "T", type: :utc_datetime_usec
+                map(:stage, from: "StageName", type: :string)
+                map(:occurred_at, from: "T", type: :utc_datetime_usec)
 
-                project :stage, onto: "somewhere"
+                project(:stage, onto: "somewhere")
               end
             end
           end
@@ -63,15 +63,15 @@ defmodule AshDiscreteBusinessEvents.MappingDslTest do
 
             business_events do
               source :s do
-                region :us
-                stream :t
+                region(:us)
+                stream(:t)
               end
 
               mapping :bad do
                 source {:s, :t}
 
-                map :stage, from: "StageName", separator: "-"
-                map :occurred_at, from: "T", type: :utc_datetime_usec
+                map(:stage, from: "StageName", separator: "-")
+                map(:occurred_at, from: "T", type: :utc_datetime_usec)
               end
             end
           end
@@ -88,15 +88,15 @@ defmodule AshDiscreteBusinessEvents.MappingDslTest do
 
             business_events do
               source :s do
-                region :us
-                stream :t
+                region(:us)
+                stream(:t)
               end
 
               mapping :bad do
                 source {:s, :t}
 
-                constant :hole, value: nil
-                map :occurred_at, from: "T", type: :utc_datetime_usec
+                constant(:hole, value: nil)
+                map(:occurred_at, from: "T", type: :utc_datetime_usec)
               end
             end
           end
@@ -113,15 +113,15 @@ defmodule AshDiscreteBusinessEvents.MappingDslTest do
 
             business_events do
               source :s do
-                region :us
-                stream :t
+                region(:us)
+                stream(:t)
               end
 
               mapping :bad do
                 source {:s, :t}
 
-                decode :stage_bucket, from: "StageName"
-                map :occurred_at, from: "T", type: :utc_datetime_usec
+                decode(:stage_bucket, from: "StageName")
+                map(:occurred_at, from: "T", type: :utc_datetime_usec)
               end
             end
           end
@@ -140,16 +140,16 @@ defmodule AshDiscreteBusinessEvents.MappingDslTest do
 
             business_events do
               source :s do
-                region :us
-                stream :t
+                region(:us)
+                stream(:t)
               end
 
               mapping :bad do
                 source {:s, :t}
 
-                map :stage, from: "StageName", type: :string
-                decode :stage, from: "Stage", cases: %{"A" => "a"}
-                map :occurred_at, from: "T", type: :utc_datetime_usec
+                map(:stage, from: "StageName", type: :string)
+                decode(:stage, from: "Stage", cases: %{"A" => "a"})
+                map(:occurred_at, from: "T", type: :utc_datetime_usec)
               end
             end
           end
@@ -168,14 +168,14 @@ defmodule AshDiscreteBusinessEvents.MappingDslTest do
 
             business_events do
               source :s do
-                region :us
-                stream :t
+                region(:us)
+                stream(:t)
               end
 
               mapping :bad do
                 source {:s, :t}
 
-                map :stage, from: "StageName", type: :string
+                map(:stage, from: "StageName", type: :string)
               end
             end
           end
@@ -192,14 +192,14 @@ defmodule AshDiscreteBusinessEvents.MappingDslTest do
 
             business_events do
               source :s do
-                region :us
-                stream :t
+                region(:us)
+                stream(:t)
               end
 
               mapping :bad do
                 source {:s, :t}
 
-                map :occurred_at, from: "T", type: :string
+                map(:occurred_at, from: "T", type: :string)
               end
             end
           end
@@ -216,16 +216,16 @@ defmodule AshDiscreteBusinessEvents.MappingDslTest do
 
             business_events do
               source :s do
-                region :us
-                stream :t
+                region(:us)
+                stream(:t)
               end
 
               mapping :bad do
                 source {:s, :t}
 
-                map :occurred_at, from: "T", type: :utc_datetime_usec
+                map(:occurred_at, from: "T", type: :utc_datetime_usec)
 
-                unmapped_because :occurred_at, "nobody needs it, surely"
+                unmapped_because(:occurred_at, "nobody needs it, surely")
               end
             end
           end
@@ -242,15 +242,15 @@ defmodule AshDiscreteBusinessEvents.MappingDslTest do
 
             business_events do
               source :s do
-                region :us
-                stream :t
+                region(:us)
+                stream(:t)
               end
 
               mapping :bad do
                 source {:s, :t}
 
-                map :occurred_at, from: "T", type: :utc_datetime_usec
-                coalesce :close_date, from: []
+                map(:occurred_at, from: "T", type: :utc_datetime_usec)
+                coalesce(:close_date, from: [])
               end
             end
           end
@@ -269,14 +269,14 @@ defmodule AshDiscreteBusinessEvents.MappingDslTest do
 
             business_events do
               source :s do
-                region :us
-                stream :t
+                region(:us)
+                stream(:t)
               end
 
               mapping :bad do
                 source {:stripe, :charges}
 
-                map :occurred_at, from: "T", type: :utc_datetime_usec
+                map(:occurred_at, from: "T", type: :utc_datetime_usec)
               end
             end
           end
@@ -294,14 +294,14 @@ defmodule AshDiscreteBusinessEvents.MappingDslTest do
 
             business_events do
               source :s do
-                region :us
-                stream :t
+                region(:us)
+                stream(:t)
               end
 
               mapping :bad do
                 source {:s, :accounts}
 
-                map :occurred_at, from: "T", type: :utc_datetime_usec
+                map(:occurred_at, from: "T", type: :utc_datetime_usec)
               end
             end
           end
@@ -319,15 +319,15 @@ defmodule AshDiscreteBusinessEvents.MappingDslTest do
 
         business_events do
           source :s do
-            region :us
-            stream :t
+            region(:us)
+            stream(:t)
           end
 
           mapping :classified_event do
             source {:s, :t}
-            classify_with AshDiscreteBusinessEvents.MappingDslTest.Classified
+            classify_with(AshDiscreteBusinessEvents.MappingDslTest.Classified)
 
-            map :occurred_at, from: "T", type: :utc_datetime_usec
+            map(:occurred_at, from: "T", type: :utc_datetime_usec)
           end
         end
       end

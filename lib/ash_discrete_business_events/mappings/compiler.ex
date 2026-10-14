@@ -164,30 +164,27 @@ defmodule AshDiscreteBusinessEvents.Mappings.Compiler do
 
   defp datetime_strings, do: Enum.map(@datetime_types, &Atom.to_string/1)
 
-  defp op_problems(op) do
-    empty = op["from"] in [nil, []]
-
-    List.wrap(
-      cond do
-        op["op"] == "coalesce" and empty ->
-          "coalesce on `#{op["target"]}` has no paths"
-
-        op["op"] == "concat" and empty ->
-          "concat on `#{op["target"]}` has no paths"
-
-        op["op"] == "decode" and op["cases"] in [nil, %{}] ->
-          "decode on `#{op["target"]}` has no cases — a translation table that " <>
-            "translates nothing is a footgun; use map or unmapped_because"
-
-        op["op"] == "unmapped_because" and op["target"] == @occurred_at_target ->
-          "occurred_at cannot be declared unmapped — the occurred-vs-observed " <>
-            "discipline requires its extraction (§1.3)"
-
-        true ->
-          nil
-      end
-    )
+  defp op_problems(%{"op" => op_name, "target" => target, "from" => from})
+       when op_name in ["coalesce", "concat"] and from in [nil, []] do
+    ["#{op_name} on `#{target}` has no paths"]
   end
+
+  defp op_problems(%{"op" => "decode", "target" => target, "cases" => cases})
+       when cases in [nil, %{}] do
+    [
+      "decode on `#{target}` has no cases — a translation table that " <>
+        "translates nothing is a footgun; use map or unmapped_because"
+    ]
+  end
+
+  defp op_problems(%{"op" => "unmapped_because", "target" => @occurred_at_target}) do
+    [
+      "occurred_at cannot be declared unmapped — the occurred-vs-observed " <>
+        "discipline requires its extraction (§1.3)"
+    ]
+  end
+
+  defp op_problems(_op), do: []
 
   # ── the apply path ─────────────────────────────────────────────────────
 
@@ -227,9 +224,8 @@ defmodule AshDiscreteBusinessEvents.Mappings.Compiler do
   def run(artifact, payload, opts) when is_map(artifact) and is_map(payload) do
     with :ok <- verify(artifact),
          {:ok, fields} <- run_ops(artifact, payload),
-         {:ok, canonical} <- occurred_at_from(fields, artifact),
-         {:ok, canonical} <- classify(artifact, payload, canonical, opts) do
-      {:ok, canonical}
+         {:ok, canonical} <- occurred_at_from(fields, artifact) do
+      classify(artifact, payload, canonical, opts)
     end
   end
 
@@ -356,7 +352,7 @@ defmodule AshDiscreteBusinessEvents.Mappings.Compiler do
     if parts == [] do
       :skip
     else
-      {:write, Enum.map(parts, &to_string/1) |> Enum.join(op["separator"] || " ")}
+      {:write, Enum.map_join(parts, op["separator"] || " ", &to_string/1)}
     end
   end
 
@@ -401,7 +397,9 @@ defmodule AshDiscreteBusinessEvents.Mappings.Compiler do
   # ── the classifier seam ────────────────────────────────────────────────
 
   defp classify(artifact, payload, canonical, opts) do
-    classifier = opts[:classifier] || artifact["classify_with"] && String.to_atom(artifact["classify_with"])
+    classifier =
+      opts[:classifier] ||
+        (artifact["classify_with"] && String.to_atom(artifact["classify_with"]))
 
     if classifier do
       canonical = put_in(canonical.provenance["source_record_id"], opts[:source_record_id])

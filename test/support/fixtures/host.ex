@@ -32,11 +32,11 @@ defmodule AshDiscreteBusinessEvents.Fixtures.Host do
     mapping :opportunity_stage_changed do
       source {:salesforce, :opportunity}
 
-      map :stage, from: "StageName", type: :string
-      map :amount, from: "Amount", type: :integer
-      map :occurred_at, from: "SystemModstamp", type: :utc_datetime_usec
+      map(:stage, from: "StageName", type: :string)
+      map(:amount, from: "Amount", type: :integer)
+      map(:occurred_at, from: "SystemModstamp", type: :utc_datetime_usec)
 
-      unmapped_because :owner_email, "PII — kept out of canonical events (§9.5)"
+      unmapped_because(:owner_email, "PII — kept out of canonical events (§9.5)")
     end
   end
 end

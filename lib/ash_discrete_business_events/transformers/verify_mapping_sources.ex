@@ -35,7 +35,7 @@ defmodule AshDiscreteBusinessEvents.Transformers.VerifyMappingSources do
                 "mapping reads from #{inspect(source_name)}, which is not a declared source"
             )}}
 
-      Info.stream_of(source, stream_name) == nil ->
+        Info.stream_of(source, stream_name) == nil ->
           {:halt,
            {:error,
             Spark.Error.DslError.exception(
