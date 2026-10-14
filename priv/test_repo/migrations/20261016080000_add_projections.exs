@@ -51,18 +51,15 @@ defmodule AshDiscreteBusinessEvents.Test.Repo.Migrations.AddProjections do
       add(:amount, :bigint)
       add(:corrections, :bigint, null: false, default: 0)
       add(:valid_at, :tstzrange, null: false)
-    end
-
-    execute(
-      "ALTER TABLE \"pipeline_histories\" ADD PRIMARY KEY (id, valid_at WITHOUT OVERLAPS)"
-    )
-
-    alter table(:pipeline_histories) do
       add(:recorded_at, :utc_datetime_usec,
         null: false,
         default: fragment("(now() AT TIME ZONE 'utc')")
       )
     end
+
+    execute(
+      "ALTER TABLE \"pipeline_histories\" ADD PRIMARY KEY (id, valid_at WITHOUT OVERLAPS)"
+    )
 
     execute(
       "ALTER TABLE \"pipeline_histories\" ADD CONSTRAINT \"pipeline_histories_by_grain_index\" " <>

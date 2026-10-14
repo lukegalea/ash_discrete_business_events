@@ -69,8 +69,9 @@ defmodule AshDiscreteBusinessEvents.Fixtures.PipelineHistory do
       description "How many superseding events have restated this subject so far — corrections are events (§7), and the projection counts them."
     end
 
-    create_timestamp :inserted_at
-    update_timestamp :updated_at
+    # No create/update timestamps: the temporal machinery owns the wall
+    # clock here — `recorded_at` is the write's stamp (the raw layer's
+    # exact posture), and the period (`valid_at`) is validity.
   end
 
   postgres do
