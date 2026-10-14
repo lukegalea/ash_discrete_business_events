@@ -63,9 +63,12 @@ defmodule AshDiscreteBusinessEvents.MixProject do
       # the ash_events fork (temporal as-of support, upstream #104).
       {:ash_events, github: "lukegalea/ash_events", branch: "temporal-as-of-support-0.7"},
 
-      # The lineage contract (BIZEV-6): test-only until that slice lands —
-      # lineage consumes ash_open_lineage's run-id/leak-rule vocabulary.
-      {:ash_open_lineage, github: "lukegalea/ash_open_lineage", only: :test, runtime: false},
+      # The lineage contract (BIZEV-6 landed it): `Lineage` and the job
+      # templates compile against AshOpenLineage's public API (`emit/2`,
+      # `fail/3`, the correlation-provider seam) — a real dependency, so a
+      # host compiles it before this package, exactly as ash_events was
+      # promoted when the ledger landed.
+      {:ash_open_lineage, github: "lukegalea/ash_open_lineage"},
 
       # Dev hygiene: static analysis (credo with the ash_credo plugin).
       # Compile before credo — ash_credo's module checks need the BEAMs.

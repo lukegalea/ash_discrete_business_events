@@ -2,11 +2,20 @@
 #
 # SPDX-License-Identifier: MIT
 
+# The lineage tests emit through the in-memory transport and the scripted
+# correlation double; both are configured before any test runs (the fixture
+# degrades to structural constants when its Agent isn't started, so tests
+# that never script it stay deterministic too).
+Application.put_env(:ash_open_lineage, :transport, AshOpenLineage.Transport.InMemory)
+Application.put_env(:ash_open_lineage, :correlation_provider, AshDiscreteBusinessEvents.Fixtures.Correlation)
+Application.put_env(:ash_open_lineage, :parent_id_provider, AshDiscreteBusinessEvents.Fixtures.Correlation)
+
 # The fixture host and the macro-generated resources are the package
 # under test; make sure everything is loaded before any test runs.
 [
   AshDiscreteBusinessEvents.Fixtures,
   AshDiscreteBusinessEvents.Fixtures.StubAdapter,
+  AshDiscreteBusinessEvents.Fixtures.Correlation,
   AshDiscreteBusinessEvents.Fixtures.Host,
   AshDiscreteBusinessEvents.Fixtures.Domain,
   AshDiscreteBusinessEvents.Fixtures.SourceRecord,
