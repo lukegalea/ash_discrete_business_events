@@ -31,7 +31,7 @@ SPDX-License-Identifier = "MIT"
 # inline CC0 header.
 [[annotations]]
 path = [
-  "priv/fixtures/salesforce/*.csv",
+  "priv/fixtures/salesforce/**/*.csv",
   "priv/fixtures/salesforce/manifest.json",
   "priv/fixtures/salesforce/README.md",
   "priv/fixtures/salesforce/LICENSE",

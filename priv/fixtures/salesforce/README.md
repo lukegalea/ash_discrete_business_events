@@ -24,3 +24,14 @@ cursoring, present in the captured download, backdated at the ledger).
 
 Import it through the full land → map → ledger path with
 `AshDiscreteBusinessEvents.Adapters.SalesforceBulk20.FixtureCorpus.import/1`.
+
+## Corrections variant (`corrections/`)
+
+`revision-2026-06.csv` — the retroactive revision the corrections demo
+replays: subject `0065f000000000004`'s June row, restated (Closed Won →
+Negotiation) at the SAME SystemModstamp. When armed
+(`FixtureCorpus.arm_revision!/2`), the corpus transport merges it over
+the served June snapshot — the source rewrote history — and the
+land→map→ledger path derives a superseding event
+(`supersedes_event_id` → the original June event, never rewritten).
+CC0-1.0, same as the corpus.

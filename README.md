@@ -538,6 +538,45 @@ mapping — recording to the ledger ONLY at genuine truth transitions
 test suite runs the corpus end-to-end — landed periods → ledger events
 → a BIZEV-8 projector → as-of reads mid-history.
 
+## Corrections & late arrivals (BIZEV-9)
+
+§7's ruling, mechanized: **corrections are events; the original is never
+rewritten**. `Ledger.Corrections` holds the truth-point register — every
+subject's ledgered `(occurred_at, data, event_id)` — and classifies each
+mapped fact against it:
+
+- an **unseen truth point** → a plain new event;
+- the **same point, same data** → a replay folding away (identical
+  content is never re-recorded);
+- the **same point, different data** → a **superseding event** whose
+  `supersedes_event_id` points at the current truth at that instant —
+  a chained, append-only correction (a second correction supersedes the
+  first: each correction is the new present).
+
+The corpus import folds every mapped record through the register, so
+**re-imports record nothing** and **retroactive revisions record exactly
+the correction**. The fixture variant `priv/fixtures/salesforce/corrections/
+revision-2026-06.csv` is the demo: subject `…0004`'s June close restated
+(Closed Won → Negotiation) at the SAME SystemModstamp — the source
+rewriting history. Armed via `FixtureCorpus.arm_revision!/2` (a restated
+truth propagates to every later snapshot, as a rewritten source's would):
+
+- the ledger shows **original + superseding event** (the original's row,
+  data and chain hash untouched);
+- the projector receives supersession **as data** — ops restate the
+  truth and count the correction (the temporal projection reopens the
+  period at the correction's own truth instant — BIZEV-8's machinery);
+- **as-of reads answer honestly on both sides**: before the truth
+  instant the pre-correction value stands unchanged; after it, the
+  corrected value.
+
+**Resync after cursor loss** (§7): the operator resets the cursor-as-
+data, the full re-sync re-observes everything — identical snapshots
+land nothing and record nothing (proven), drifted snapshots land
+exactly one new period and exactly one superseding event per restated
+truth point. Re-sync can never duplicate (delivery + source idempotency)
+and never silently revises (corrections are visible events).
+
 ## Projections (BIZEV-8)
 
 The ledger IS an AshEvents log, so the projector engine drains business
