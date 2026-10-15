@@ -81,8 +81,24 @@ defmodule AshDiscreteBusinessEvents.TriggersTest do
     test "a failed nudge never fails the record — the sweep recovers it" do
       TriggerHandler.script({:error, "bpmn down"})
 
-      event = LedgerEvents.record!(subject_external_id: "trig-nudge-3")
+      # config/test.exs holds the logger at :error; open this module up
+      # to :warning for the capture.
+      Logger.put_module_level(Triggers, :warning)
+      on_exit(fn -> Logger.delete_module_level(Triggers) end)
+
+      log =
+        ExUnit.CaptureLog.capture_log([level: :warning], fn ->
+          event = LedgerEvents.record!(subject_external_id: "trig-nudge-3")
+          send(self(), {:event, event})
+        end)
+
+      assert_received {:event, event}
       assert event.id
+
+      # The missed-nudge warning names the kind (the row's `action`), not
+      # the rescue's "nudge raised" fallback.
+      assert log =~ "nudge missed for :\"opportunity.stage_changed\""
+      refute log =~ "nudge raised"
 
       # The nudge was ATTEMPTED (and failed loudly to the handler's
       # outcome) — but the record stands.

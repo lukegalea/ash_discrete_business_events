@@ -98,7 +98,7 @@ defmodule AshDiscreteBusinessEvents.Triggers do
 
           {:error, reason} ->
             Logger.warning(
-              "[triggers] nudge missed for #{inspect(record.event_kind)} " <>
+              "[triggers] nudge missed for #{inspect(record.action)} " <>
                 "(#{record.subject_external_id}): #{inspect(reason)} — the sweep will re-dispatch"
             )
 
