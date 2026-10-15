@@ -95,17 +95,19 @@ end
 |---|---|
 | **BIZEV-2** | Contracts frozen — DSL sections, ledger row shape and SourceRecord identity pinned by fixture tests; review checklist (`docs/REVIEW.md`) |
 | **BIZEV-3** | SourceRecord: the temporal raw-landing layer |
-| **BIZEV-4** | **The Ledger: the dedicated AshEvents log — locked, chained, append-only** |
-| **BIZEV-5** | **The mapping engine: rules as versioned, content-hashed data** |
-| **BIZEV-6** (this branch) | **Lineage integration: the run-id contract, batch-granular emission, the leak rule** |
-| **BIZEV-7** (this branch) | **Salesforce Bulk API 2.0 vertical + the fixture corpus (the honest demo input)** |
-| BIZEV-8 | Temporal canonical projections over the ledger |
-| BIZEV-9 | Corrections & late-arrival semantics |
-| BIZEV-10 | Simulation twin (closes SIM-NAMESPACE-ISOLATION) |
+| **BIZEV-4** | The Ledger: the dedicated AshEvents log — locked, chained, append-only |
+| **BIZEV-5** | The mapping engine: rules as versioned, content-hashed data |
+| **BIZEV-6** | Lineage integration: the run-id contract, batch-granular emission, the leak rule |
+| **BIZEV-7** | Salesforce Bulk API 2.0 vertical + the fixture corpus (the honest demo input) |
+| **BIZEV-8** | Temporal canonical projections over the ledger, with a package-owned region-scoped drain |
+| **BIZEV-9** | Corrections & late-arrival semantics |
+| **BIZEV-10** | Simulation twin (closes SIM-NAMESPACE-ISOLATION) |
+| **BIZEV-12** | Retention & GDPR: partitioned raw layer, audited purge, erasure-as-event, PII lint |
+| **BIZEV-13** | The BPMN trigger bridge: nudge-on-append + sweep, `process_ref` |
 
-Until BIZEV-7's fixture corpus lands, demos run on *internal* event history
-and are labeled as such — no demo ever shows external events that did not
-traverse the ledger.
+All of the slices above are on `main`. Demos follow [the honest demo
+path](#the-honest-demo-path-8): external history shown in a demo comes from
+the fixture corpus through the ledger, never from anywhere else.
 
 ## The ledger (BIZEV-4)
 
@@ -474,9 +476,10 @@ SystemModstamp` — polled to completion, results downloaded (PK-chunked
 result sets fetched whole, each chunk an accounted API call), the next
 cursor = the results' max `SystemModstamp`. **Budgets are data**: every
 transport call is accounted against the source's `rate_budget`;
-exhaustion raises `Adapters.BudgetExhausted` — the job FAILs visibly,
-lineage records it, and the feed PAUSES at the last completed batch's
-cursor (never degrades). Tokens come from the configured
+exhaustion raises `Adapters.BudgetExhausted` inside the job — the job FAILs
+visibly, lineage records it, `Sync.run/1` returns
+`{:error, %Adapters.BudgetExhausted{landed:, cursor:}}`, and the feed PAUSES
+at the last completed batch's cursor (never degrades). Tokens come from the configured
 `Adapters.AuthProvider` (ADR 0011: Nango yields tokens; a connection id
 is never an action argument; the HTTP seam is a behaviour — CI runs the
 adapter against the fixture-corpus transport, never a live org).
@@ -525,7 +528,7 @@ Import it through the FULL land → map → ledger pipeline:
     mapping_version_resource: MyApp.Platform.MappingVersion
   )
 
-summary # %{runs: 9, landed: 201, ledger_events: 201, cursor: …, version_hash: …}
+summary # %{runs: 9, landed: 201, ledger_events: 201, corrections: 0, cursor: …, version_hash: …}
 ```
 
 The import publishes → validates → **activates** the mapping version
@@ -588,7 +591,7 @@ Explicitly does NOT resolve ADR 0024 platform-wide.
 by `fetched_at` (the observation instant — §1.3's period basis),
 monthly, hand-maintained (ash_postgres codegen does not model
 partitioning). A DEFAULT partition catches unsliced months;
-`Retention.ensure_partition!/3` creates an explicit month with its
+`Retention.ensure_partition!/2` creates an explicit month with its
 per-partition identity exclusion (the identity is enforced WITHIN a
 partition; cross-month overlaps are precluded operationally — periods
 are `[fetched_at, next observation)` and backdated landings are
@@ -641,7 +644,7 @@ of labor — **nudge on append + sweep for completeness**:
 
 - **Nudge on append, best-effort**: after a fresh ledger append commits,
   the configured handler's `nudge/1` receives the full ledger row (the
-  event kind, subject/correlation keys, `process_ref`, provenance,
+  event kind in `action`, subject/correlation keys, `process_ref`, provenance,
   data). A failure is logged and swallowed — the record stands, the
   sweep recovers. Simulated rows never nudge (the twin stays out of the
   real machinery); delivery-collapsed retries don't re-nudge.
@@ -660,7 +663,8 @@ config :ash_discrete_business_events, :trigger_handler, MyApp.Bpmn.EventSource
 
 defmodule MyApp.Bpmn.EventSource do
   @behaviour AshDiscreteBusinessEvents.Triggers.Handler
-  def nudge(event), do: MyApp.Bpmn.Runtime.dispatch(event.event_kind, event)
+  # the ledger row carries the event kind in `action` (an atom)
+  def nudge(event), do: MyApp.Bpmn.Runtime.dispatch(event.action, event)
 end
 
 # the completeness sweep (the host's periodic job):
@@ -693,7 +697,7 @@ merged silently.**
 
 Production Salesforce connects only after the fixture path is boring.
 
-## Projections (BIZEV-8)
+## The simulation twin (BIZEV-10)
 
 The simulation twin is **one macro, two modules, two tables**: declaring
 `{:ledger, opts}` emits the real ledger AND its `SimulationEvent` twin
@@ -713,8 +717,9 @@ criteria, closed:
   never alias, satisfy, or be satisfied by a real drain's checkpoint on
   the same projector and region, and two simulation runs never share
   one. `sim:` is a reserved prefix for real projector names.
-  `Projections.drain_simulation/3` (or `Drain.simulation/4`) is the
-  supported entry; the twin feed filters on the run label the rows
+  A projector's `drain_simulation/3` (defined by
+  `use AshDiscreteBusinessEvents.Projections`; or `Drain.simulation/4`)
+  is the supported entry; the twin feed filters on the run label the rows
   carry.
 - **AC-3 — unmistakable by shape, labeled by contract**: the package
   ships no UI, so the "visibly labeled" requirement lands as the

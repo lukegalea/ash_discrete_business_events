@@ -34,9 +34,9 @@ defmodule AshDiscreteBusinessEvents.Triggers do
         @behaviour AshDiscreteBusinessEvents.Triggers.Handler
 
         def nudge(event) do
-          # event is the full ledger row: event_kind, subject_*,
-          # process_ref, provenance, data …
-          MyApp.Bpmn.Runtime.dispatch(event.event_kind, event)
+          # event is the full ledger row: the event kind in `action`,
+          # subject_*, process_ref, provenance, data …
+          MyApp.Bpmn.Runtime.dispatch(event.action, event)
         end
       end
 

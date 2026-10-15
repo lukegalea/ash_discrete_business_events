@@ -13,7 +13,7 @@ defmodule AshDiscreteBusinessEvents.Retention do
   The raw table is RANGE-partitioned by `fetched_at` (the observation
   instant — §1.3's period basis), monthly, hand-maintained (the house
   pattern: ash_postgres codegen does not model partitioning). A DEFAULT
-  partition catches everything not yet sliced; `ensure_partition!/3`
+  partition catches everything not yet sliced; `ensure_partition!/2`
   creates an explicit month (with the per-partition identity exclusion —
   the identity is enforced WITHIN a partition; cross-month overlaps are
   precluded operationally: periods are `[fetched_at, next observation)`
@@ -21,7 +21,7 @@ defmodule AshDiscreteBusinessEvents.Retention do
 
   ## Drop-partition purge — an explicit, audited operator action
 
-  `purge_before/2` drops whole monthly partitions older than the
+  `purge_before/3` drops whole monthly partitions older than the
   threshold. It requires `confirmed: true` (and a region, for the
   tombstone), counts the rows first, drops, and records ONE ledger
   tombstone per partition — `:"retention.partition_purged"`, carrying
