@@ -47,7 +47,6 @@ defmodule AshDiscreteBusinessEvents.SourceRecord.Land do
   end
 
   defp run_inner(resource, args, fetched_at, auth) do
-
     case current_version_at(resource, args, fetched_at, auth) do
       {:ok, nil} ->
         # No version contains the instant: either the identity has never
