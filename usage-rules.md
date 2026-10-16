@@ -13,8 +13,12 @@ consumers. (Grows with each slice; what is here is already binding.)
 The canonical discrete business-event ledger: `SourceRecord` raw landing
 with temporal version history (BIZEV-3), the dedicated locked-and-chained
 event ledger with per-region commit-order sequences and its simulation
-twin (BIZEV-4), and mappings-as-data with per-row provenance (BIZEV-5) —
-the land → map → ledger boundary external SaaS history enters the
+twin (BIZEV-4, BIZEV-10), mappings-as-data with per-row provenance
+(BIZEV-5), job-granular lineage (BIZEV-6), the Salesforce Bulk 2.0
+adapter and fixture corpus (BIZEV-7), temporal projections over the
+ledger (BIZEV-8), corrections as superseding events (BIZEV-9), raw-layer
+retention and erasure (BIZEV-12) and the BPMN trigger bridge (BIZEV-13)
+— the land → map → ledger boundary external SaaS history enters the
 platform through.
 
 ## What it never does — do not make it
@@ -79,8 +83,10 @@ platform through.
   exact defect ADR 0049 names.
 - The land decision compares the version valid **at `fetched_at`** — a
   late duplicate of already-observed content is a no-op. Landings whose
-  `fetched_at` precedes an identity's known history are refused
-  (taps deliver in cursor order; backdated reconstruction is BIZEV-9).
+  `fetched_at` precedes an identity's known history are refused with
+  `SourceRecord.BackdatedLanding` (taps deliver in cursor order). Late
+  arrivals and restated history are handled downstream, as superseding
+  ledger events (BIZEV-9) — never by forcing a backdated landing.
 - Residency is fixed at admission. Content changes re-open periods;
   they do not re-litigate the tag.
 - As-of questions go through `at/5` (index-backed containment), never
@@ -88,6 +94,14 @@ platform through.
 - Identity attributes must be globally unique across concurrent tests —
   two tests landing the same external id deadlock on the exclusion
   constraint's row locks (the ash:testing deadlock rule).
+- The raw table is RANGE-partitioned by `fetched_at`, monthly (BIZEV-12).
+  ash_postgres codegen does not model partitioning, so the partitioned
+  parent and its DEFAULT partition are a hand-maintained migration in the
+  host (`priv/test_repo/migrations/20261017100000_partition_source_records.exs`
+  is the shape). The identity exclusion is enforced per partition.
+- Create explicit months with `Retention.ensure_partition!/2` — it adds
+  the per-partition identity exclusion. Rows outside any explicit month
+  land in the DEFAULT partition, which `purge_before/3` never drops.
 
 ## Working with the ledger (BIZEV-4)
 
@@ -105,6 +119,91 @@ platform through.
   after any load/backfill that disabled triggers.
 - The primary read (`:read`) is machinery-only (AshEvents' replay scans
   through it); consumers use the region-scoped reads.
+- Correct a recorded fact by recording a new event whose
+  `supersedes_event_id` points at the current truth for that subject and
+  instant (BIZEV-9). `Ledger.Corrections` is the truth-point register:
+  same point + same data folds away, same point + different data is a
+  superseding event. Never re-record identical content to "refresh" it.
+
+## Working with lineage (BIZEV-6)
+
+- Emit through `Lineage.run/3` (START, COMPLETE, FAIL on raise) around
+  the whole batch — one sync run or webhook batch is one job. Never
+  register the AshOpenLineage notifier on a BIZEV resource.
+- Name jobs and datasets through `Lineage` (`job/2`, `raw_dataset/2`,
+  `ledger_dataset/1`, `rules_dataset/2`) — never hand-build the strings.
+- Operational runs use `Lineage.run_id(:operational)` (the host
+  correlation id); replays and backfills use the content-derived
+  `Lineage.run_id(%{purpose:, ledger_range:, mapping_versions:})`.
+- Stream ranges go out as facet counts (`:counts`), never boundary
+  values; actor, tenant, customer and filter values never go out at all.
+- Parent run ids cross process boundaries as data:
+  `RunContext.put_parent/2` (string key in Oban args),
+  `RunContext.enter_from_args/2` at worker entry, `RunContext.fan_out/3`
+  for Task fan-outs. Host correlation scope is wired with
+  `config :ash_discrete_business_events, :scope_establisher, {mod, fun}`
+  (arity 2: `(parent_id, fun)`).
+
+## Working with adapters (BIZEV-7)
+
+- A source's `adapter` must implement every `Adapters.Adapter` callback
+  or the host does not compile; one `auth` edge per source.
+- Run syncs through `Adapters.Sync.run/1` with the cursor read from your
+  sync-run record, and persist the returned `cursor`. Budget exhaustion
+  returns `{:error, %Adapters.BudgetExhausted{landed:, cursor:}}` — the
+  job fails visibly and the feed pauses at that cursor.
+- Tokens come from the configured `Adapters.AuthProvider`; a connection
+  id is never an action argument. CI runs adapters against the fixture
+  transport, never a live org.
+
+## Working with projections (BIZEV-8)
+
+- Declare projectors with `use AshDiscreteBusinessEvents.Projections`
+  (`name:`, `event_log:`, `projection_resource:`) and drain them with
+  the projector's `drain/2` — the package-owned, per-region drain over
+  `feed`. Never run the engine's Server over the ledger: it scans by
+  global id, a silent cross-region merge.
+- `project "kind"` matches the ledger's `action` (the event kind's atom
+  form); the handler sees the whole ledger row.
+- Declare `temporal` on the projection resource to get periods: the
+  drain writes `as_of event.occurred_at`, so late arrivals and
+  corrections reopen history at truth time.
+
+## Working with the simulation twin (BIZEV-10)
+
+- Simulated events are recorded on `<Ledger>.SimulationEvent`, whose
+  `record` requires a `simulation_run` label — never on the real ledger.
+- Drain a simulation through the projector's `drain_simulation/3` (or
+  `Projections.Drain.simulation/4`); its checkpoints are keyed
+  `sim:<name>.<region>:<run>`. Never give a real projector a name that
+  starts with `sim:` — the prefix is reserved by convention and nothing
+  refuses it.
+- Any surface listing event history labels simulated runs; read them
+  with `AshDiscreteBusinessEvents.simulation_runs/1`.
+
+## Retention & erasure (BIZEV-12)
+
+- Purge with `Retention.purge_before/3` (`before:`, `region:`,
+  `confirmed: true` — it refuses without the opt-in). Whole monthly
+  partitions drop; each drop records a `:"retention.partition_purged"`
+  tombstone with structural facts only.
+- Erase a subject with `Retention.erase_subject/4,5`: the
+  `:"retention.subject_erased"` tombstone is recorded first, then the
+  raw rows are deleted. Erasure is local — the next sync re-lands the
+  subject's current state as new history.
+- Never put payload values in a tombstone.
+
+## The BPMN trigger bridge (BIZEV-13)
+
+- Wire a handler with `config :ash_discrete_business_events,
+  :trigger_handler, MyHandler` implementing
+  `Triggers.Handler.nudge/1`. It receives the ledger row; the event kind
+  is in `action`.
+- Nudges are best-effort; run `Triggers.sweep/3` periodically for
+  completeness. Delivery is at-least-once, so handlers must be
+  idempotent. Simulated rows never nudge.
+- Process correlation rides the row's `process_ref`, set from the
+  mapping's `process_key` (a payload path) or by the caller.
 
 ## Working with the DSL
 
@@ -115,6 +214,11 @@ platform through.
 - The DSL vocabulary is closed and schema-verified: an unknown option is
   a compile error. Extend it by amending the schema and citing the design
   section — never by accepting `:any`-typed escape hatches.
+- Mapping targets named like direct personal data (`email`, `phone`,
+  `ssn`, `tax_id`, … — the list is in `Transformers.VerifyMappings`) are
+  refused at compile time. Keep PII in the raw layer and name the gap
+  with `unmapped_because`. The guard catches obvious names only; it is
+  not a PII classifier.
 - `region` is required on every source (§6). A source without a region
   has no honest place to land.
 
@@ -123,7 +227,11 @@ platform through.
 BIZEV-2 froze the contracts; BIZEV-3 delivered the raw layer; BIZEV-4
 the ledger; BIZEV-5 the mapping engine — the closed operator vocabulary,
 content-hashed `MappingVersion` artifacts (draft → validate → activate),
-the pure apply path, and the classifier seam. The row shapes are pinned
+the pure apply path, and the classifier seam; BIZEV-6 lineage; BIZEV-7
+the Salesforce vertical and fixture corpus; BIZEV-8 projections;
+BIZEV-9 corrections; BIZEV-10 the simulation twin's isolation contract;
+BIZEV-12 retention and erasure; BIZEV-13 the BPMN trigger bridge. The
+README's "Status" table is the slice list. The row shapes are pinned
 by the fixture-pinned contract tests in `test/` — amending them requires
 amending those tests and citing the design section that motivates the
 amendment.

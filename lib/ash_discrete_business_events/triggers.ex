@@ -34,9 +34,9 @@ defmodule AshDiscreteBusinessEvents.Triggers do
         @behaviour AshDiscreteBusinessEvents.Triggers.Handler
 
         def nudge(event) do
-          # event is the full ledger row: event_kind, subject_*,
-          # process_ref, provenance, data …
-          MyApp.Bpmn.Runtime.dispatch(event.event_kind, event)
+          # event is the full ledger row: the event kind in `action`,
+          # subject_*, process_ref, provenance, data …
+          MyApp.Bpmn.Runtime.dispatch(event.action, event)
         end
       end
 
@@ -98,7 +98,7 @@ defmodule AshDiscreteBusinessEvents.Triggers do
 
           {:error, reason} ->
             Logger.warning(
-              "[triggers] nudge missed for #{inspect(record.event_kind)} " <>
+              "[triggers] nudge missed for #{inspect(record.action)} " <>
                 "(#{record.subject_external_id}): #{inspect(reason)} — the sweep will re-dispatch"
             )
 
