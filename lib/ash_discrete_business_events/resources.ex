@@ -77,6 +77,30 @@ defmodule AshDiscreteBusinessEvents.Resources do
       from `use Ash.Resource`; a generated module cannot).
     * `:clear_records_for_replay` — optional; required before running
       the log's `:replay` action (AshEvents raises without it).
+    * `:simulation_base` — optional, `{module, use_opts}`: the base the
+      twin is built on. By default the twin is a bare
+      `use Ash.Resource` (AshPostgres, the two ledger extensions), so it
+      has none of the host's tenancy, ownership, changes or policies. A
+      host whose ledger stands on its own base passes that base here,
+      and the twin is emitted as `use module, use_opts` — the same
+      base the real ledger uses, so the host's grant union governs
+      simulated events too. `use_opts` must bring the data layer and
+      both `AshEvents.EventLog` and
+      `AshDiscreteBusinessEvents.Ledger.Extension` (the twin refuses to
+      compile otherwise); `:domain` is added when `use_opts` is a
+      literal keyword list without one. Whatever the base adds (a
+      `changes` block, policies) applies to the twin as written.
+
+          use AshDiscreteBusinessEvents.Resources,
+              {:ledger,
+               repo: MyApp.Repo,
+               table: "ledger_events",
+               simulation_table: "ledger_simulation_events",
+               domain: MyApp.BusinessEvents,
+               simulation_base:
+                 {MyApp.Platform.Resource,
+                  extra_extensions: [AshEvents.EventLog,
+                                     AshDiscreteBusinessEvents.Ledger.Extension]}}
 
   The ledger's only write path is `record` — locked per region
   (`RegionLockKeyGenerator`), chained per region (the emitted triggers),
@@ -373,9 +397,15 @@ defmodule AshDiscreteBusinessEvents.Resources do
     opts =
       Keyword.validate!(
         opts || [],
-        @ledger_required_opts ++ [:domain, :clear_records_for_replay]
+        @ledger_required_opts ++ [:domain, :clear_records_for_replay, :simulation_base]
       )
-      |> Enum.map(fn {key, value} -> {key, Macro.expand(value, __CALLER__)} end)
+
+    # The base is AST spliced into the twin as written (its options are
+    # evaluated where the twin is compiled), so it is taken out before the
+    # rest of the options are expanded and persisted as data.
+    {simulation_base, opts} = Keyword.pop(opts, :simulation_base)
+
+    opts = Enum.map(opts, fn {key, value} -> {key, Macro.expand(value, __CALLER__)} end)
 
     missing =
       for key <- @ledger_required_opts, is_nil(Keyword.get(opts, key)), into: [], do: key
@@ -442,14 +472,7 @@ defmodule AshDiscreteBusinessEvents.Resources do
         @persist {:bizev_ledger, unquote(Macro.escape(opts))}
       end
 
-    twin_use_opts =
-      [
-        data_layer: AshPostgres.DataLayer,
-        extensions: [AshEvents.EventLog, AshDiscreteBusinessEvents.Ledger.Extension]
-      ]
-      |> then(fn base ->
-        if domain, do: Keyword.put(base, :domain, domain), else: base
-      end)
+    twin_use = twin_use(simulation_base, domain, __CALLER__)
 
     twin_opts =
       Keyword.merge(opts, simulation?: true)
@@ -473,7 +496,9 @@ defmodule AshDiscreteBusinessEvents.Resources do
       quote location: :keep do
         @moduledoc unquote(twin_moduledoc)
 
-        use Ash.Resource, unquote(Macro.escape(twin_use_opts))
+        unquote(twin_use)
+
+        AshDiscreteBusinessEvents.Resources.__verify_twin_extensions__!(__MODULE__)
 
         unquote(event_log_section)
 
@@ -648,5 +673,64 @@ defmodule AshDiscreteBusinessEvents.Resources do
     raise ArgumentError,
           "use AshDiscreteBusinessEvents.Resources expects :source_record, {:ledger, opts} " <>
             "or :mapping_version, got: #{inspect(other)} (known: #{inspect(known)})"
+  end
+
+  @twin_extensions [AshEvents.EventLog, AshDiscreteBusinessEvents.Ledger.Extension]
+
+  # The twin's `use` line. Without a host base: a bare Ash resource with the
+  # two ledger extensions. With one: the host's base and its options, as
+  # written, plus the twin's domain when the options are a literal keyword
+  # list that does not name one.
+  defp twin_use(nil, domain, _caller) do
+    use_opts =
+      [data_layer: AshPostgres.DataLayer, extensions: @twin_extensions]
+      |> then(fn base -> if domain, do: Keyword.put(base, :domain, domain), else: base end)
+
+    quote do
+      use Ash.Resource, unquote(Macro.escape(use_opts))
+    end
+  end
+
+  defp twin_use({base, use_opts}, domain, caller) do
+    base = Macro.expand(base, caller)
+
+    unless is_atom(base) do
+      raise ArgumentError,
+            ":simulation_base must be {module, use_opts}, got a base of #{Macro.to_string(base)}"
+    end
+
+    use_opts =
+      if domain && Keyword.keyword?(use_opts) && not Keyword.has_key?(use_opts, :domain),
+        do: Keyword.put(use_opts, :domain, domain),
+        else: use_opts
+
+    quote do
+      use unquote(base), unquote(use_opts)
+    end
+  end
+
+  defp twin_use(other, _domain, _caller) do
+    raise ArgumentError,
+          ":simulation_base must be {module, use_opts}, got: #{Macro.to_string(other)}"
+  end
+
+  @doc false
+  # Runs in the twin's module body, after its `use` line: a host base that
+  # does not bring both ledger extensions would compile a twin without
+  # `record`, chains or the `simulated` columns. Refuse instead.
+  @spec __verify_twin_extensions__!(module()) :: :ok
+  def __verify_twin_extensions__!(module) do
+    extensions = Module.get_attribute(module, :extensions) || []
+
+    case Enum.reject(@twin_extensions, &(&1 in extensions)) do
+      [] ->
+        :ok
+
+      missing ->
+        raise ArgumentError,
+              "the simulation twin #{inspect(module)} is missing #{inspect(missing)}: a " <>
+                ":simulation_base must bring AshEvents.EventLog and " <>
+                "AshDiscreteBusinessEvents.Ledger.Extension (the twin IS a ledger)"
+    end
   end
 end

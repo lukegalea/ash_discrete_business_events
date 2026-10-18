@@ -326,6 +326,91 @@ defmodule AshDiscreteBusinessEvents.RetentionTest do
 
       assert historical == []
     end
+
+    test "the host's context and record opts reach the tombstone" do
+      subject = "retention-erase-3"
+
+      _ =
+        SourceRecord.land!(%{
+          source: :salesforce,
+          stream: :opportunity,
+          external_id: subject,
+          region: :us,
+          residency_tag: "us",
+          raw_payload: %{"stage" => "Proposal"},
+          source_metadata: %{"adapter" => "retention-test"},
+          cursor: %{"system_modstamp" => "2026-10-01T00:00:00+0000"},
+          fetched_at: ~U[2026-10-01 10:00:00Z]
+        })
+
+      # The fixture ledger refuses a blocked actor at the append: the
+      # record opts reach the tombstone's record, and since the tombstone
+      # is recorded FIRST, a refused tombstone deletes nothing.
+      assert_raise Ash.Error.Forbidden, fn ->
+        Retention.erase_subject(SourceRecord, Ledger, :us, subject,
+          record_opts: [actor: %{blocked?: true}]
+        )
+      end
+
+      assert [_still_there] =
+               SourceRecord
+               |> Ash.Query.filter(external_id == ^subject)
+               |> Ash.read!(authorize?: false)
+
+      assert {:ok, %{deleted: 1}} =
+               Retention.erase_subject(SourceRecord, Ledger, :us, subject,
+                 context: %{"owner" => "host-owner"},
+                 residency_tag: "us-east",
+                 record_opts: [actor: %{blocked?: true}, authorize?: false]
+               )
+
+      tombstone =
+        Ledger.by_subject!(:us, subject)
+        |> Enum.find(&(&1.action == :"retention.subject_erased"))
+
+      assert tombstone.context == %{"owner" => "host-owner"}
+      assert tombstone.residency_tag == "us-east"
+    end
+  end
+
+  describe "tombstone/5" do
+    test "is the tombstone's record input, as data" do
+      assert Retention.tombstone(:"retention.subject_erased", :us, "subject-1", %{"n" => 1},
+               occurred_at: ~U[2026-10-18 00:00:00Z],
+               context: %{"owner" => "o"},
+               delivery_key: "erased:subject-1"
+             ) == %{
+               event_kind: :"retention.subject_erased",
+               region: :us,
+               residency_tag: "us",
+               subject_type: "retention",
+               subject_external_id: "subject-1",
+               occurred_at: ~U[2026-10-18 00:00:00Z],
+               provenance: %{
+                 "mapping_name" => "retention",
+                 "mapping_version_hash" => "retention",
+                 "source_record_id" => nil
+               },
+               data: %{"n" => 1},
+               context: %{"owner" => "o"},
+               delivery_key: "erased:subject-1"
+             }
+
+      assert Retention.tombstone_kinds() == [
+               :"retention.partition_purged",
+               :"retention.subject_erased"
+             ]
+    end
+
+    test "refuses a kind that is not a tombstone" do
+      # Read at run time, so the type checker does not flag the deliberate
+      # mismatch at compile time.
+      kind = Process.get(:not_a_tombstone, :"opportunity.stage_changed")
+
+      assert_raise FunctionClauseError, fn ->
+        Retention.tombstone(kind, :us, "s", %{})
+      end
+    end
   end
 
   # ── the PII lint ───────────────────────────────────────────────────────

@@ -624,6 +624,14 @@ is the ledger's native answer to GDPR: it records THAT a subject's raw
 data was purged, while the ledger's canonical facts stay (PII-minimal by
 design).
 
+**Tombstones in a host's ledger**: both actions take `record_opts:`
+(the `tenant:`, `actor:` and `authorize?:` the ledger's `record` runs
+with) and `context:` (where a host's ownership rides), so a multitenant
+or owned ledger can hold them. `Retention.tombstone/5` is the
+tombstone's record input as data, for a host whose erasure is not this
+module's (a crypto-shred) and that records the same fact in the same
+vocabulary.
+
 **The honesty note (re-sync after erasure)**: erasure is LOCAL
 retention, not source revision. The SOURCE still holds its data; the
 next sync re-lands the subject's current state as NEW history (fresh
@@ -732,6 +740,16 @@ criteria, closed:
 
 The regression suite lives in `test/simulation_isolation_test.exs` —
 its passing is the closure statement.
+
+**The twin on the host's base.** By default the twin is a bare
+`use Ash.Resource` with the two ledger extensions: none of the host's
+tenancy, ownership, changes or policies. A host whose ledger stands on
+its own base passes that base as `simulation_base: {MyBase, use_opts}`,
+and the twin is emitted as `use MyBase, use_opts` — so the host's grant
+union governs simulated events as it governs real ones. `use_opts` must
+bring both ledger extensions (the twin refuses to compile otherwise);
+`simulation_runs/2` takes the read's options for a multitenant twin.
+`test/simulation_host_base_test.exs` pins it.
 
 ## Projections (BIZEV-8)
 

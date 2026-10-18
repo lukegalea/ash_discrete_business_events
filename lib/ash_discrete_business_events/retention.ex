@@ -38,6 +38,17 @@ defmodule AshDiscreteBusinessEvents.Retention do
   PII-minimal by design (BIZEV-5's mapping rules — structural facts
   only), and the tombstone is the ledger's native answer to GDPR.
 
+  ## Tombstones in a host's ledger
+
+  `tombstone/5` is the tombstone's shape as data — the record input
+  `purge_before/3` and `erase_subject/5` write — so a host whose erasure
+  is not this module's (a crypto-shred, say) records the same fact in the
+  same vocabulary. Both actions take `:record_opts` (passed to the
+  ledger's `record!`: a multitenant host's `tenant:`, `actor:`,
+  `authorize?:`) and `:context` (the row's `context` map, where a host's
+  ownership or attribution rides); without them the tombstone is
+  recorded as before.
+
   ## The honesty note (re-sync after erasure)
 
   Erasure is LOCAL retention, not source revision: the SOURCE still
@@ -97,6 +108,8 @@ defmodule AshDiscreteBusinessEvents.Retention do
     * `:region` — the tombstone's region (retention is region-scoped, §6).
     * `:confirmed` — MUST be `true`: this is a destructive, explicit
       operator action; the default (nil) refuses.
+    * `:record_opts`, `:context`, `:residency_tag` — optional; how the
+      tombstones are recorded (see "Tombstones in a host's ledger").
 
   Returns `{:ok, %{dropped: [partition names], rows: total dropped,
   tombstones: n}}`. The DEFAULT partition is never dropped.
@@ -131,7 +144,8 @@ defmodule AshDiscreteBusinessEvents.Retention do
           %{
             "partition" => partition_name(partition),
             "rows" => count
-          }
+          },
+          opts
         )
 
         {:ok,
@@ -191,17 +205,24 @@ defmodule AshDiscreteBusinessEvents.Retention do
   subject) is recorded FIRST, then the raw rows are deleted through the
   table machinery. Returns `{:ok, %{deleted: n}}`.
 
+  `opts`: `:record_opts`, `:context` and `:residency_tag`, as for
+  `purge_before/3`.
+
   The honesty note: this is LOCAL retention. The source still holds its
   data; the next sync re-lands the subject's current state as NEW
   history — it never resurrects the erased instants.
   """
   @spec erase_subject(module(), module(), atom(), String.t(), keyword()) ::
           {:ok, %{deleted: non_neg_integer()}}
-  def erase_subject(source_record, ledger, region, subject_external_id, _opts \\ []) do
-    record_tombstone(ledger, region, :"retention.subject_erased", subject_external_id, %{
-      "subject" => subject_external_id,
-      "region" => to_string(region)
-    })
+  def erase_subject(source_record, ledger, region, subject_external_id, opts \\ []) do
+    record_tombstone(
+      ledger,
+      region,
+      :"retention.subject_erased",
+      subject_external_id,
+      %{"subject" => subject_external_id, "region" => to_string(region)},
+      opts
+    )
 
     %{num_rows: deleted} =
       repo(source_record).query!(
@@ -214,24 +235,66 @@ defmodule AshDiscreteBusinessEvents.Retention do
 
   # ── tombstones ────────────────────────────────────────────────────────
 
-  # The ledger's native answer to GDPR: a tombstone row records THAT a
-  # purge/erasure happened, with structural facts only — partition
-  # names, row counts, the subject descriptor — never payloads.
-  defp record_tombstone(ledger, region, kind, subject_external_id, data) do
-    ledger.record!(%{
+  @tombstone_kinds [:"retention.partition_purged", :"retention.subject_erased"]
+
+  @doc "The tombstone event kinds."
+  @spec tombstone_kinds() :: [atom()]
+  def tombstone_kinds, do: @tombstone_kinds
+
+  @doc """
+  A tombstone's `record` input: `kind` (one of `tombstone_kinds/0`) about
+  `subject_external_id` in `region`, carrying `data` — which must be
+  structural facts only (partition names, row counts, subject
+  descriptors), never payloads.
+
+  Options:
+
+    * `:residency_tag` — default the region's name.
+    * `:occurred_at` — default now.
+    * `:context` — the row's `context` map (a host's ownership or
+      attribution).
+    * `:delivery_key` — makes recording the tombstone idempotent.
+
+  Pure: no clock is read when `:occurred_at` is given, and nothing is
+  written. Record it with the ledger's `record`.
+  """
+  @spec tombstone(atom(), atom(), String.t(), map(), keyword()) :: map()
+  def tombstone(kind, region, subject_external_id, data, opts \\ [])
+      when kind in @tombstone_kinds and is_atom(region) and is_binary(subject_external_id) and
+             is_map(data) do
+    %{
       event_kind: kind,
       region: region,
-      residency_tag: to_string(region),
+      residency_tag: Keyword.get(opts, :residency_tag, to_string(region)),
       subject_type: "retention",
       subject_external_id: subject_external_id,
-      occurred_at: DateTime.utc_now(),
+      occurred_at: Keyword.get_lazy(opts, :occurred_at, &DateTime.utc_now/0),
       provenance: %{
         "mapping_name" => "retention",
         "mapping_version_hash" => "retention",
         "source_record_id" => nil
       },
       data: data
-    })
+    }
+    |> put_present(:context, opts[:context])
+    |> put_present(:delivery_key, opts[:delivery_key])
+  end
+
+  defp put_present(map, _key, nil), do: map
+  defp put_present(map, key, value), do: Map.put(map, key, value)
+
+  # The ledger's native answer to GDPR: a tombstone row records THAT a
+  # purge/erasure happened, with structural facts only — partition
+  # names, row counts, the subject descriptor — never payloads.
+  defp record_tombstone(ledger, region, kind, subject_external_id, data, opts) do
+    kind
+    |> tombstone(
+      region,
+      subject_external_id,
+      data,
+      Keyword.take(opts, [:context, :residency_tag])
+    )
+    |> ledger.record!(Keyword.get(opts, :record_opts, []))
   end
 
   # ── partition naming/bounds ───────────────────────────────────────────
