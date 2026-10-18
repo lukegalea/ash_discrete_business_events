@@ -107,7 +107,10 @@ defmodule AshDiscreteBusinessEvents do
   twin row by shape, and this function is the supported read.
 
   Accepts the ledger resource OR its SimulationEvent twin directly.
-  Returns one map per run — `simulation_run`, `events`, `subjects`,
+  `opts` are passed to the read (default `authorize?: false`): a host
+  whose twin stands on a multitenant base (`:simulation_base`) passes the
+  `tenant:` (or an `actor:` with `authorize?: true`) to list one tenant's
+  runs. Returns one map per run — `simulation_run`, `events`, `subjects`,
   `first_observed_at`, `last_observed_at` — sorted by run label.
 
   ## The contract (the ticket's "unmistakable in the UI", since the
@@ -126,7 +129,7 @@ defmodule AshDiscreteBusinessEvents do
   their checkpoints `sim:<name>.<region>:<run>` — never aliasing a real
   drain's cursor (AC-2).
   """
-  @spec simulation_runs(module()) :: [
+  @spec simulation_runs(module(), keyword()) :: [
           %{
             required(:simulation_run) => String.t(),
             required(:events) => non_neg_integer(),
@@ -135,11 +138,11 @@ defmodule AshDiscreteBusinessEvents do
             required(:last_observed_at) => DateTime.t() | nil
           }
         ]
-  def simulation_runs(ledger_or_twin) do
+  def simulation_runs(ledger_or_twin, opts \\ []) do
     twin = simulation_twin(ledger_or_twin)
 
     twin
-    |> Ash.read!(authorize?: false)
+    |> Ash.read!(Keyword.merge([authorize?: false], opts))
     |> Enum.group_by(& &1.simulation_run)
     |> Enum.map(fn {run, rows} ->
       observed = Enum.map(rows, & &1.occurred_at) |> Enum.sort(DateTime)
