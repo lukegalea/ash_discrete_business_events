@@ -59,7 +59,7 @@ defmodule AshDiscreteBusinessEvents.SourceRecordIdentityContractTest do
   }
 
   # The same identity, re-observed with IDENTICAL content: a no-op (the
-  # VPM-49 import-rework pattern) — no new period, no ledger event.
+  # import-rework pattern) — no new period, no ledger event.
   @identical_reobservation @raw_version
 
   # The same identity, re-observed with CHANGED content: a NEW period

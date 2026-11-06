@@ -69,7 +69,7 @@ defmodule AshDiscreteBusinessEvents.SourceRecordTest do
       assert SourceRecord.by_identity!(:salesforce, :opportunity, external_id, :ca).id == ca.id
     end
 
-    test "re-observing identical content is a temporal no-op (the VPM-49 pattern)", %{
+    test "re-observing identical content is a temporal no-op (the import-rework pattern)", %{
       external_id: external_id
     } do
       first = Observations.land!(external_id: external_id)

@@ -32,8 +32,7 @@ defmodule AshDiscreteBusinessEvents.LedgerRowContractTest do
     data: "what — the canonical mapped payload the projector folds",
     subject_type:
       "what-subject — descriptor, never an FK (ADR 0017 resolution is projection work)",
-    subject_external_id:
-      "what-subject — the external id; VendorPM Law 1: idempotency keys, never identities",
+    subject_external_id: "what-subject — the external id; an idempotency key, never an identity",
     subject_stream: "what-subject — which stream the subject was observed in",
     actor_type:
       "who — verbatim external actor type; resolution to internal Person is projection work",
@@ -178,7 +177,7 @@ defmodule AshDiscreteBusinessEvents.LedgerRowContractTest do
     end
 
     test "subject and actor are descriptors, not identities" do
-      # VendorPM Law 1 / ADR 0017: linking to internal entities is
+      # ADR 0017: linking to internal entities is
       # projection/entity-resolution work, never done at land. The row
       # carries (type, external_id, stream/display) only — no FK, no
       # resolved internal id. Types are strings (they cross JSON

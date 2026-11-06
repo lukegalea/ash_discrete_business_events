@@ -212,7 +212,7 @@ defmodule CorpusGenerator do
   defp name(idx) do
     words =
       ~w(Northwind Summit Ridge Harbor Delta Vector Atlas Meridian Cobalt Lumen Pilcrow
-         Basalt Cirrus Quarry Amber Juniper Keystone Foundry Marigold Solstice Trellis
+         Basalt Cirrus Quarry Amber Juniper Granite Foundry Marigold Solstice Trellis
          Vantage Whitfield Zephyr Ardent Bramble Cinder Elmwood Fernwood Goldleaf Highpark)
 
     "#{Enum.at(words, rem(idx, length(words)))} #{String.pad_leading(Integer.to_string(idx), 3, "0")} renewal"

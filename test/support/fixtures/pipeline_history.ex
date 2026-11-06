@@ -46,7 +46,7 @@ defmodule AshDiscreteBusinessEvents.Fixtures.PipelineHistory do
       public? true
       constraints max_length: 512
 
-      description "The subject's external id — the ledger's record_id, an idempotency key never an identity (VendorPM Law 1)."
+      description "The subject's external id — the ledger's record_id, an idempotency key never an identity."
     end
 
     attribute :stage, :string do

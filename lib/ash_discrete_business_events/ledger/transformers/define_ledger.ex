@@ -106,7 +106,7 @@ defmodule AshDiscreteBusinessEvents.Ledger.Transformers.DefineLedger do
          public?: true,
          constraints: [max_length: 512],
          description:
-           "The subject's external id — VendorPM Law 1: an idempotency key, never an identity. Also rides the log's record_id (the machinery's subject key)."},
+           "The subject's external id — an idempotency key, never an identity. Also rides the log's record_id (the machinery's subject key)."},
         {:subject_stream, :atom,
          public?: true,
          description:
