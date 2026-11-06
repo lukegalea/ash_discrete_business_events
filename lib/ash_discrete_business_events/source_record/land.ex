@@ -56,7 +56,7 @@ defmodule AshDiscreteBusinessEvents.SourceRecord.Land do
 
       {:ok, record} ->
         if identical?(record, args) do
-          # The VPM-49 import-rework pattern: re-observing identical
+          # The import-rework pattern: re-observing identical
           # content writes nothing and returns what is already there.
           {:ok, record}
         else

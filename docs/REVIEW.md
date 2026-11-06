@@ -72,7 +72,7 @@ cursor state in job args, env vars, or process dictionaries.
 
 The ledger carries `subject_type`/`subject_external_id`/`subject_stream`
 and `actor_type`/`actor_external_id`/`actor_display` — no FKs to internal
-entities, no resolution at land (§1.4, VendorPM Law 1, ADR 0017). Reject
+entities, no resolution at land (§1.4, ADR 0017). Reject
 columns like `person_id` or `account_id` on the ledger. The two
 idempotency layers stay separate: `delivery_key` (delivery level) below
 source-level idempotency.

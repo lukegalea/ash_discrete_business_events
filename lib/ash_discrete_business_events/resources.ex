@@ -156,7 +156,7 @@ defmodule AshDiscreteBusinessEvents.Resources do
           public? true
           constraints max_length: 512
 
-          description "The source system's own id for the object, verbatim. An idempotency key, never an identity (VendorPM Law 1)."
+          description "The source system's own id for the object, verbatim. An idempotency key, never an identity."
         end
 
         attribute :region, :atom do
@@ -346,7 +346,7 @@ defmodule AshDiscreteBusinessEvents.Resources do
             * no version of the identity exists at that instant → the
               observation OPENS the period (first landing)
             * the version there carries the same payload and cursor →
-              temporal no-op (the VPM-49 import-rework pattern): nothing
+              temporal no-op (the import-rework pattern): nothing
               is written, the existing record is returned
             * it differs → the observation SPLITS: changed content opens
               a new period, history preserved
