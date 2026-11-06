@@ -32,8 +32,7 @@ defmodule AshDiscreteBusinessEvents.LedgerRowContractTest do
     data: "what — the canonical mapped payload the projector folds",
     subject_type:
       "what-subject — descriptor, never an FK (ADR 0017 resolution is projection work)",
-    subject_external_id:
-      "what-subject — the external id; an idempotency key, never an identity",
+    subject_external_id: "what-subject — the external id; an idempotency key, never an identity",
     subject_stream: "what-subject — which stream the subject was observed in",
     actor_type:
       "who — verbatim external actor type; resolution to internal Person is projection work",
