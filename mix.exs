@@ -60,11 +60,11 @@ defmodule AshDiscreteBusinessEvents.MixProject do
       # (`RegionLockKeyGenerator` uses its lock-key behaviour, the ledger
       # transformer orders itself after its transformers). A real
       # dependency, so a host compiles ash_events before this package —
-      # the ash_events fork (temporal as-of support, upstream #104).
+      # the ash_events fork (upstream main after #113, plus the no_rollback fix).
       # (override: true — the temporal-as-of fork stands in for hex's
       # ash_events ~> 0.6, which the projector engine declares).
       {:ash_events,
-       github: "lukegalea/ash_events", branch: "temporal-as-of-support-0.7", override: true},
+       github: "lukegalea/ash_events", branch: "main-no-rollback", override: true},
 
       # The projector engine (BIZEV-8 landed the integration): the package
       # compiles against the Projector DSL and ProjectionResource extension,
