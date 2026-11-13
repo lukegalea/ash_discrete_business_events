@@ -87,3 +87,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: fsfe/reuse-action@v5
+
+  # Dependency security gates (AST-181 H-03). `mix hex.audit` checks the lock
+  # against Hex retirements and advisories; `mix_audit` reads its own
+  # advisory database, and the two have disagreed (SDLC-96), so both run.
+  # mix_audit is installed as an escript so the package's mix.exs and lock
+  # stay untouched.
+  audit:
+    name: hex.audit + deps.audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27.3.4"
+          elixir-version: "1.20.4"
+      - run: mix deps.get
+      - run: mix hex.audit
+      - run: mix escript.install --force hex mix_audit
+      - run: ~/.mix/escripts/mix_audit
