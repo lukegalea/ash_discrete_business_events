@@ -83,19 +83,20 @@ defmodule AshDiscreteBusinessEvents.Projections.Drain do
   # projectors (and run-less drains) are untouched.
   defp assert_simulation_grain!(projector, events, opts) do
     if projector.__simulation_projection__() and Keyword.get(opts, :simulation_run) do
-      Enum.each(events, fn event ->
-        grain = projector.__grain__().(event)
+      Enum.each(events, &assert_event_grain!(projector, &1))
+    end
+  end
 
-        unless is_map(grain) and Map.has_key?(grain, :simulation_run) and
-                 grain.simulation_run == event.simulation_run do
-          raise ArgumentError,
-                "#{inspect(projector)} is declared `simulation_projection: true`, but its " <>
-                  "grain for event #{event.sequence} does not return the event's " <>
-                  "simulation_run (got: #{inspect(grain)}, expected the run " <>
-                  "#{inspect(event.simulation_run)}). The grain fn must include " <>
-                  "simulation_run: event.simulation_run so two runs give two projection rows."
-        end
-      end)
+  defp assert_event_grain!(projector, event) do
+    grain = projector.__grain__().(event)
+
+    unless is_map(grain) and Map.get(grain, :simulation_run) == event.simulation_run do
+      raise ArgumentError,
+            "#{inspect(projector)} is declared `simulation_projection: true`, but its " <>
+              "grain for event #{event.sequence} does not return the event's " <>
+              "simulation_run (got: #{inspect(grain)}, expected the run " <>
+              "#{inspect(event.simulation_run)}). The grain fn must include " <>
+              "simulation_run: event.simulation_run so two runs give two projection rows."
     end
   end
 
