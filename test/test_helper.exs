@@ -37,6 +37,8 @@ Application.put_env(
   AshDiscreteBusinessEvents.Fixtures.MappingVersion,
   AshDiscreteBusinessEvents.Fixtures.PipelineHistory,
   AshDiscreteBusinessEvents.Fixtures.Projection,
+  AshDiscreteBusinessEvents.Fixtures.SimRunProjection,
+  AshDiscreteBusinessEvents.Fixtures.SimProjectionProjector,
   AshDiscreteBusinessEvents.Test.Repo
 ]
 |> Enum.each(&Code.ensure_loaded!/1)
