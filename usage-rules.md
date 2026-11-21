@@ -197,6 +197,15 @@ platform through.
   `drain_simulation/3` checks that the grain fn returns the event's
   `simulation_run` before processing a batch.
 
+## Common random numbers (simulation identity)
+
+- Call `Simulation.Identity.seed/1` and `draw/1` with exactly
+  `subject:`, `random_stream_id:` and `replication_id:` — the seed is a
+  pure function of those three keys and stable across releases.
+- The candidate is never an input: compared candidates draw the same
+  numbers for the same subject, stream and replication.
+- The stream id is mandatory — nothing defaults `random_stream_id`.
+
 ## Retention & erasure (BIZEV-12)
 
 - Purge with `Retention.purge_before/3` (`before:`, `region:`,
