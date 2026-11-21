@@ -59,6 +59,19 @@ defmodule AshDiscreteBusinessEvents.Projections do
   — declare `temporal` on it and the projector's writes become periods
   (design §4: canonical projections ARE temporal, host-side).
 
+  ## Simulation projections
+
+  A projector draining the simulation twin can declare
+  `simulation_projection: true`. Its grain must then include the
+  simulation run (`:simulation_run` — checked at compile time against the
+  `projection_resource`'s `grain_fields` and attributes), so two runs
+  produce two projection rows instead of overwriting each other; the
+  checkpoints already key per run (`sim:<name>.<region>:<run>`). The
+  option is off by default. A simulation projection drains the twin
+  only — its `drain/2` on the real ledger refuses — and
+  `drain_simulation/3` verifies at drain time that the grain fn returns
+  the event's `simulation_run`.
+
   ## Temporal projections
 
   When the projection resource declares `temporal`, the drain writes
@@ -71,7 +84,9 @@ defmodule AshDiscreteBusinessEvents.Projections do
   """
 
   defmacro __using__(opts) do
-    quote bind_quoted: [opts: opts] do
+    simulation_projection = Keyword.get(opts, :simulation_projection, false)
+
+    quote bind_quoted: [opts: opts, simulation_projection: simulation_projection] do
       event_log = Keyword.fetch!(opts, :event_log)
 
       unless Ash.Resource.Info.action(event_log, :feed) do
@@ -82,10 +97,40 @@ defmodule AshDiscreteBusinessEvents.Projections do
                 "{:ledger, opts}` (§5.1)."
       end
 
+      # A simulation projection's grain must carry the run — two runs
+      # give two projection rows, never one overwritten row (the
+      # checkpoints are already per run). Checked against the projection
+      # resource's declared grain_fields and attributes, so a projector
+      # whose grain cannot name the run refuses to compile.
+      if simulation_projection do
+        projection_resource = Keyword.fetch!(opts, :projection_resource)
+
+        unless :simulation_run in projection_resource.__projection_grain_fields__() do
+          raise ArgumentError,
+                "#{inspect(projection_resource)} must include :simulation_run in its " <>
+                  "projection_resource grain_fields — #{inspect(__MODULE__)} is declared " <>
+                  "`simulation_projection: true`, and its grain must include the simulation " <>
+                  "run so two runs give two projection rows."
+        end
+
+        unless Ash.Resource.Info.attribute(projection_resource, :simulation_run) do
+          raise ArgumentError,
+                "#{inspect(projection_resource)} must define a :simulation_run attribute — " <>
+                  "#{inspect(__MODULE__)} is declared `simulation_projection: true`, and the " <>
+                  "grain's run field must be stored on the row."
+        end
+      end
+
       use AshEvents.Projections.Projector,
         name: Keyword.fetch!(opts, :name),
         event_log: event_log,
         projection_resource: Keyword.fetch!(opts, :projection_resource)
+
+      @doc """
+      Whether this projector declares `simulation_projection: true` — it
+      drains the SimulationEvent twin only, into rows grained by the run.
+      """
+      def __simulation_projection__, do: unquote(simulation_projection)
 
       # The package's region-scoped drain, bound to this projector. The
       # engine's Server is deliberately not started over the ledger — see
@@ -99,6 +144,9 @@ defmodule AshDiscreteBusinessEvents.Projections do
 
       Idempotent: the checkpoint is the cursor. Call again (or from the
       job template on every run) — already-drained events are skipped.
+
+      A projector declared `simulation_projection: true` drains the twin
+      only — this raises on it; use `drain_simulation/3`.
       """
       @spec drain(atom(), keyword()) :: non_neg_integer()
       def drain(region, opts \\ []) do

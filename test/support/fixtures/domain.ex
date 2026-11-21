@@ -19,5 +19,6 @@ defmodule AshDiscreteBusinessEvents.Fixtures.Domain do
     resource AshDiscreteBusinessEvents.Fixtures.MappingVersion
     resource AshDiscreteBusinessEvents.Fixtures.PipelineHistory
     resource AshDiscreteBusinessEvents.Fixtures.Projection
+    resource AshDiscreteBusinessEvents.Fixtures.SimRunProjection
   end
 end

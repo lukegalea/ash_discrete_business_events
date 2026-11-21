@@ -45,6 +45,8 @@ defmodule AshDiscreteBusinessEvents.Projections.Drain do
   """
   @spec drain(module(), atom(), keyword()) :: non_neg_integer()
   def drain(projector, region, opts \\ []) when is_atom(region) do
+    assert_twin_only!(projector, opts)
+
     event_log = event_log(projector, opts)
     checkpoint = checkpoint_for(projector, region, opts)
     after_sequence = checkpoint.last_seen_event_id || 0
@@ -56,9 +58,46 @@ defmodule AshDiscreteBusinessEvents.Projections.Drain do
       |> Ash.Query.limit(Keyword.get(opts, :limit, @batch_limit))
       |> Ash.read!(authorize?: false)
 
+    assert_simulation_grain!(projector, events, opts)
+
     Enum.each(events, &process_event(projector, event_log, &1, opts))
 
     length(events) + drained_after?(projector, region, opts, length(events))
+  end
+
+  # A simulation projection drains the twin only: `drain_simulation/3`
+  # always passes the run label, so a run-less drain (the real ledger's
+  # feed) is a declaration bug, not a poisoned event — raise, never DLQ.
+  defp assert_twin_only!(projector, opts) do
+    if projector.__simulation_projection__() and is_nil(Keyword.get(opts, :simulation_run)) do
+      raise ArgumentError,
+            "#{inspect(projector)} is declared `simulation_projection: true` — it drains " <>
+              "the SimulationEvent twin only (drain_simulation/3). Draining the real " <>
+              "ledger would merge simulation runs into real projection rows."
+    end
+  end
+
+  # Before any event of the batch is processed: the grain fn must return
+  # the run the twin rows carry. A mismatch would put one run's truth in
+  # another run's row — checked per batch, before any write. Non-simulation
+  # projectors (and run-less drains) are untouched.
+  defp assert_simulation_grain!(projector, events, opts) do
+    if projector.__simulation_projection__() and Keyword.get(opts, :simulation_run) do
+      Enum.each(events, &assert_event_grain!(projector, &1))
+    end
+  end
+
+  defp assert_event_grain!(projector, event) do
+    grain = projector.__grain__().(event)
+
+    unless is_map(grain) and Map.get(grain, :simulation_run) == event.simulation_run do
+      raise ArgumentError,
+            "#{inspect(projector)} is declared `simulation_projection: true`, but its " <>
+              "grain for event #{event.sequence} does not return the event's " <>
+              "simulation_run (got: #{inspect(grain)}, expected the run " <>
+              "#{inspect(event.simulation_run)}). The grain fn must include " <>
+              "simulation_run: event.simulation_run so two runs give two projection rows."
+    end
   end
 
   @doc """

@@ -751,6 +751,18 @@ bring both ledger extensions (the twin refuses to compile otherwise);
 `simulation_runs/2` takes the read's options for a multitenant twin.
 `test/simulation_host_base_test.exs` pins it.
 
+**Simulation projections.** A projector draining the twin can declare
+`simulation_projection: true` on
+`use AshDiscreteBusinessEvents.Projections` (default false). The option
+requires the projection resource to declare `:simulation_run` in its
+`grain_fields` and to carry the attribute — the projector refuses to
+compile otherwise — so two runs give two projection rows instead of
+overwriting each other; the checkpoints are already per run. A
+simulation projection drains the twin only: its `drain/2` raises, and
+`drain_simulation/3` checks, before processing a batch, that the grain
+fn returns the event's `simulation_run` (a wrong grain is a declaration
+bug — it raises rather than routing to the DeadLetter).
+
 ## Projections (BIZEV-8)
 
 The ledger IS an AshEvents log, so the projector engine drains business
